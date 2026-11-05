@@ -226,3 +226,18 @@ VALUES (
   '{"title": "Rota de Verão 2027", "destination": "Fortaleza & Cumbuco - CE"}'::jsonb
 );
 
+
+
+-- ─────────────────────────────────────────────────────────────
+-- PASSO 9: Exemplo de convite seguro com PIN (bcrypt)
+-- Descomente e ajuste os UUIDs para gerar convites manualmente se desejar:
+-- O PIN '123456' é armazenado com hash bcrypt e salt individual gerado por gen_salt('bf', 10)
+-- ─────────────────────────────────────────────────────────────
+-- INSERT INTO invitations (trip_id, profile_id, pin_hash, token, expires_at)
+-- VALUES (
+--   'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+--   'UUID_DO_PARTICIPANTE',
+--   extensions.crypt('123456', extensions.gen_salt('bf', 10)),
+--   encode(gen_random_bytes(24), 'hex'),
+--   now() + INTERVAL '30 days'
+-- );

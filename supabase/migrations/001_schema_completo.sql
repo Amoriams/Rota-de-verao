@@ -1,8 +1,11 @@
 -- ============================================================
---  ROTA DE VERÃO — Script SQL Completo (Revisão de Segurança)
+--  ROTA DE VERÃO — Script SQL Completo (Revisão Rigorosa de Segurança)
 --  Migration 001: Schema inicial, ENUMs, tabelas, índices, triggers e RLS
 --  Executar no Supabase: Dashboard → SQL Editor → New Query
 -- ============================================================
+
+-- Habilita extensão pgcrypto para bcrypt nativo
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
 
 -- ─────────────────────────────────────────────────────────────
 -- PARTE 1: TIPOS ENUMERADOS (ENUMs)
@@ -118,13 +121,13 @@ CREATE TABLE public.trip_members (
 COMMENT ON TABLE public.trip_members IS 'Associa participantes à viagem com papel e status de confirmação.';
 
 
--- 2.5. INVITATIONS — convites individuais com PIN, expiração e proteção contra abusos
+-- 2.5. INVITATIONS — convites individuais com hash bcrypt, salt individual e rate-limit
 CREATE TABLE public.invitations (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   trip_id         UUID NOT NULL REFERENCES public.trips(id) ON DELETE CASCADE,
   profile_id      UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  pin_hash        TEXT NOT NULL,          -- Hash seguro do PIN de 6 dígitos (nunca em texto puro)
-  token           TEXT NOT NULL UNIQUE,   -- Token aleatório para link direto
+  pin_hash        TEXT NOT NULL,          -- Hash bcrypt ($2a$10$...) com salt individual aleatório
+  token           TEXT NOT NULL UNIQUE,   -- Token aleatório criptograficamente forte para link direto
   expires_at      TIMESTAMPTZ NOT NULL,
   is_revoked      BOOLEAN NOT NULL DEFAULT false,
   attempt_count   INTEGER NOT NULL DEFAULT 0,
@@ -136,7 +139,7 @@ CREATE TABLE public.invitations (
   CONSTRAINT invitations_unique UNIQUE (trip_id, profile_id)
 );
 
-COMMENT ON TABLE public.invitations IS 'Convites individuais com hash seguro, validade e controle de tentativas.';
+COMMENT ON TABLE public.invitations IS 'Convites com hash bcrypt de alta lentidão computacional e controle individual de tentativas.';
 
 
 -- 2.6. AUTH_RATE_LIMITS — proteção anti-força bruta por IP e identificador
@@ -147,10 +150,12 @@ CREATE TABLE public.auth_rate_limits (
   attempt_count INTEGER NOT NULL DEFAULT 1,
   blocked_until TIMESTAMPTZ,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+  CONSTRAINT auth_rate_limits_unique UNIQUE (ip_address, identifier)
 );
 
-COMMENT ON TABLE public.auth_rate_limits IS 'Registro de tentativas de autenticação para bloqueio temporário de IP e identificador.';
+COMMENT ON TABLE public.auth_rate_limits IS 'Registro atômico de tentativas de autenticação para bloqueio temporário.';
 
 
 -- 2.7. ACCOMMODATIONS — opções de hospedagem
@@ -454,7 +459,7 @@ $$;
 
 
 -- ─────────────────────────────────────────────────────────────
--- PARTE 6: AUDITORIA AUTOMÁTICA VIA TRIGGERS NO BANCO
+-- PARTE 6: AUDITORIA AUTOMÁTICA VIA TRIGGERS NO BANCO (AMPLIADA)
 -- ─────────────────────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION public.audit_trigger_func()
@@ -471,9 +476,10 @@ DECLARE
 BEGIN
   v_actor_id := auth.uid();
 
+  -- Extrai o trip_id correto dependendo da tabela
   IF TG_TABLE_NAME = 'trips' THEN
     v_trip_id := COALESCE(NEW.id, OLD.id);
-  ELSIF TG_TABLE_NAME = 'trip_members' OR TG_TABLE_NAME = 'cost_items' THEN
+  ELSIF TG_TABLE_NAME IN ('trip_members', 'cost_items', 'accommodations', 'flights', 'vehicles', 'polls', 'couples') THEN
     v_trip_id := COALESCE(NEW.trip_id, OLD.trip_id);
   ELSE
     v_trip_id := NULL;
@@ -490,6 +496,14 @@ BEGIN
     v_details := jsonb_build_object('old', to_jsonb(OLD));
   ELSE
     v_details := jsonb_build_object('new', to_jsonb(NEW));
+  END IF;
+
+  -- Higieniza: remove eventuais campos de credenciais do log
+  IF v_details ? 'pin_hash' THEN
+    v_details := v_details - 'pin_hash';
+  END IF;
+  IF v_details ? 'token' THEN
+    v_details := v_details - 'token';
   END IF;
 
   -- Registra apenas se houver viagem e autor identificado
@@ -523,7 +537,23 @@ CREATE TRIGGER trigger_audit_trips
   FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
 
 CREATE TRIGGER trigger_audit_trip_members
-  AFTER UPDATE OR DELETE ON public.trip_members
+  AFTER INSERT OR UPDATE OR DELETE ON public.trip_members
+  FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
+
+CREATE TRIGGER trigger_audit_accommodations
+  AFTER INSERT OR UPDATE OR DELETE ON public.accommodations
+  FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
+
+CREATE TRIGGER trigger_audit_flights
+  AFTER INSERT OR UPDATE OR DELETE ON public.flights
+  FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
+
+CREATE TRIGGER trigger_audit_vehicles
+  AFTER INSERT OR UPDATE OR DELETE ON public.vehicles
+  FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
+
+CREATE TRIGGER trigger_audit_polls
+  AFTER INSERT OR UPDATE OR DELETE ON public.polls
   FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
 
 CREATE TRIGGER trigger_audit_cost_items
@@ -532,10 +562,136 @@ CREATE TRIGGER trigger_audit_cost_items
 
 
 -- ─────────────────────────────────────────────────────────────
--- PARTE 7: ROW LEVEL SECURITY (RLS) RIGOROSO
+-- PARTE 7: VALIDAÇÃO ATÔMICA DE PIN COM BCRYPT E ANTI-ENUMERAÇÃO
 -- ─────────────────────────────────────────────────────────────
 
--- ── 7.1. PROFILES ──────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION public.verify_invitation_pin(
+  p_pin TEXT,
+  p_token TEXT,
+  p_ip TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions, pg_temp
+AS $$
+DECLARE
+  v_now TIMESTAMPTZ := now();
+  v_ip_record RECORD;
+  v_invite RECORD;
+  v_matched_invite RECORD := NULL;
+  v_auth_email TEXT;
+  v_dummy_bcrypt TEXT := '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
+BEGIN
+  -- 1. Rate limiting atômico por IP
+  SELECT * INTO v_ip_record
+  FROM public.auth_rate_limits
+  WHERE ip_address = p_ip AND identifier = 'ip-global'
+  FOR UPDATE;
+
+  IF FOUND THEN
+    IF v_ip_record.blocked_until IS NOT NULL AND v_ip_record.blocked_until > v_now THEN
+      RETURN jsonb_build_object(
+        'success', false,
+        'code', 'BLOCKED_IP',
+        'message', 'Muitas tentativas a partir deste endereço. Tente novamente mais tarde.'
+      );
+    END IF;
+  ELSE
+    INSERT INTO public.auth_rate_limits (ip_address, identifier, attempt_count)
+    VALUES (p_ip, 'ip-global', 0)
+    ON CONFLICT (ip_address, identifier) DO NOTHING;
+  END IF;
+
+  -- 2. Busca e validação do convite
+  IF p_token IS NOT NULL AND p_token <> '' THEN
+    SELECT * INTO v_invite
+    FROM public.invitations
+    WHERE token = p_token AND is_revoked = false AND expires_at > v_now
+    FOR UPDATE;
+
+    IF FOUND THEN
+      v_matched_invite := v_invite;
+    END IF;
+  ELSE
+    -- Busca por PIN
+    FOR v_invite IN
+      SELECT * FROM public.invitations
+      WHERE is_revoked = false AND expires_at > v_now
+      FOR UPDATE
+    LOOP
+      IF v_invite.blocked_until IS NOT NULL AND v_invite.blocked_until > v_now THEN
+        CONTINUE;
+      END IF;
+
+      -- Comparação bcrypt em tempo seguro
+      IF extensions.crypt(p_pin, v_invite.pin_hash) = v_invite.pin_hash THEN
+        v_matched_invite := v_invite;
+        EXIT;
+      ELSE
+        -- Incrementa tentativas falhas no convite
+        UPDATE public.invitations
+        SET attempt_count = attempt_count + 1,
+            last_attempt_at = v_now,
+            blocked_until = CASE WHEN attempt_count + 1 >= 5 THEN v_now + INTERVAL '15 minutes' ELSE NULL END
+        WHERE id = v_invite.id;
+      END IF;
+    END LOOP;
+
+    -- Executa crypt dummy se nenhum convite for encontrado para equalizar tempo de resposta (anti-enumeração)
+    IF v_matched_invite IS NULL THEN
+      PERFORM extensions.crypt(p_pin, v_dummy_bcrypt);
+    END IF;
+  END IF;
+
+  -- 3. Se não encontrou correspondência
+  IF v_matched_invite IS NULL THEN
+    UPDATE public.auth_rate_limits
+    SET attempt_count = attempt_count + 1,
+        blocked_until = CASE WHEN attempt_count + 1 >= 10 THEN v_now + INTERVAL '15 minutes' ELSE NULL END,
+        updated_at = v_now
+    WHERE ip_address = p_ip AND identifier = 'ip-global';
+
+    RETURN jsonb_build_object(
+      'success', false,
+      'code', 'INVALID_CREDENTIALS',
+      'message', 'Código de acesso ou convite inválido ou expirado.'
+    );
+  END IF;
+
+  -- 4. Sucesso: Zera contadores de falha
+  UPDATE public.invitations
+  SET attempt_count = 0,
+      blocked_until = NULL,
+      last_used_at = v_now
+  WHERE id = v_matched_invite.id;
+
+  UPDATE public.auth_rate_limits
+  SET attempt_count = 0,
+      blocked_until = NULL,
+      updated_at = v_now
+  WHERE ip_address = p_ip AND identifier = 'ip-global';
+
+  -- Obtém o e-mail do participante em auth.users
+  SELECT email INTO v_auth_email
+  FROM auth.users
+  WHERE id = v_matched_invite.profile_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'profile_id', v_matched_invite.profile_id,
+    'trip_id', v_matched_invite.trip_id,
+    'email', v_auth_email
+  );
+END;
+$$;
+
+
+-- ─────────────────────────────────────────────────────────────
+-- PARTE 8: ROW LEVEL SECURITY (RLS) RIGOROSO EM TODAS AS TABELAS
+-- ─────────────────────────────────────────────────────────────
+
+-- ── 8.1. PROFILES ──────────────────────────────────────────────
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "profiles_select"
@@ -548,7 +704,7 @@ CREATE POLICY "profiles_update_own"
   WITH CHECK (id = auth.uid());
 
 
--- ── 7.2. TRIPS ─────────────────────────────────────────────────
+-- ── 8.2. TRIPS ─────────────────────────────────────────────────
 ALTER TABLE public.trips ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "trips_select_member"
@@ -561,7 +717,7 @@ CREATE POLICY "trips_update_admin"
   WITH CHECK (public.is_trip_admin(id));
 
 
--- ── 7.3. TRIP_MEMBERS ──────────────────────────────────────────
+-- ── 8.3. TRIP_MEMBERS ──────────────────────────────────────────
 ALTER TABLE public.trip_members ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "trip_members_select"
@@ -583,7 +739,7 @@ CREATE POLICY "trip_members_all_admin"
   WITH CHECK (public.is_trip_admin(trip_id));
 
 
--- ── 7.4. COUPLES ───────────────────────────────────────────────
+-- ── 8.4. COUPLES ───────────────────────────────────────────────
 ALTER TABLE public.couples ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "couples_select_member"
@@ -596,26 +752,24 @@ CREATE POLICY "couples_all_admin"
   WITH CHECK (public.is_trip_admin(trip_id));
 
 
--- ── 7.5. INVITATIONS ───────────────────────────────────────────
+-- ── 8.5. INVITATIONS ───────────────────────────────────────────
 ALTER TABLE public.invitations ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "invitations_select_own"
-  ON public.invitations FOR SELECT TO authenticated
-  USING (profile_id = auth.uid());
-
+-- Participantes não podem listar ou inspecionar convites (anti-enumeração e anti-leaks)
+-- Apenas a administradora gerencia os convites
 CREATE POLICY "invitations_all_admin"
   ON public.invitations FOR ALL TO authenticated
   USING (public.is_trip_admin(trip_id))
   WITH CHECK (public.is_trip_admin(trip_id));
 
 
--- ── 7.6. AUTH_RATE_LIMITS ──────────────────────────────────────
+-- ── 8.6. AUTH_RATE_LIMITS ──────────────────────────────────────
 ALTER TABLE public.auth_rate_limits ENABLE ROW LEVEL SECURITY;
 
--- Apenas funções de serviço com service_role gerenciam rate limits
+-- Sem acesso direto para clientes authenticated; operado somente por verify_invitation_pin (SECURITY DEFINER)
 
 
--- ── 7.7. ACCOMMODATIONS ────────────────────────────────────────
+-- ── 8.7. ACCOMMODATIONS ────────────────────────────────────────
 ALTER TABLE public.accommodations ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "accommodations_select_member"
@@ -628,7 +782,7 @@ CREATE POLICY "accommodations_all_admin"
   WITH CHECK (public.is_trip_admin(trip_id));
 
 
--- ── 7.8. FLIGHTS ───────────────────────────────────────────────
+-- ── 8.8. FLIGHTS ───────────────────────────────────────────────
 ALTER TABLE public.flights ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "flights_select_member"
@@ -641,7 +795,7 @@ CREATE POLICY "flights_all_admin"
   WITH CHECK (public.is_trip_admin(trip_id));
 
 
--- ── 7.9. VEHICLES ──────────────────────────────────────────────
+-- ── 8.9. VEHICLES ──────────────────────────────────────────────
 ALTER TABLE public.vehicles ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "vehicles_select_member"
@@ -654,7 +808,7 @@ CREATE POLICY "vehicles_all_admin"
   WITH CHECK (public.is_trip_admin(trip_id));
 
 
--- ── 7.10. VEHICLE_INTERESTS ────────────────────────────────────
+-- ── 8.10. VEHICLE_INTERESTS ────────────────────────────────────
 ALTER TABLE public.vehicle_interests ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "vehicle_interests_select_member"
@@ -687,7 +841,7 @@ CREATE POLICY "vehicle_interests_delete_own"
   );
 
 
--- ── 7.11. POLLS ────────────────────────────────────────────────
+-- ── 8.11. POLLS ────────────────────────────────────────────────
 ALTER TABLE public.polls ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "polls_select_member"
@@ -700,7 +854,7 @@ CREATE POLICY "polls_all_admin"
   WITH CHECK (public.is_trip_admin(trip_id));
 
 
--- ── 7.12. POLL_OPTIONS ─────────────────────────────────────────
+-- ── 8.12. POLL_OPTIONS ─────────────────────────────────────────
 ALTER TABLE public.poll_options ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "poll_options_select_member"
@@ -720,7 +874,7 @@ CREATE POLICY "poll_options_all_admin"
   );
 
 
--- ── 7.13. POLL_VOTES ───────────────────────────────────────────
+-- ── 8.13. POLL_VOTES ───────────────────────────────────────────
 ALTER TABLE public.poll_votes ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "poll_votes_select_member"
@@ -757,7 +911,7 @@ CREATE POLICY "poll_votes_update_own_if_allowed"
   );
 
 
--- ── 7.14. COST_ITEMS ───────────────────────────────────────────
+-- ── 8.14. COST_ITEMS ───────────────────────────────────────────
 ALTER TABLE public.cost_items ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "cost_items_select_member"
@@ -770,7 +924,7 @@ CREATE POLICY "cost_items_all_admin"
   WITH CHECK (public.is_trip_admin(trip_id));
 
 
--- ── 7.15. COST_PARTICIPANTS ────────────────────────────────────
+-- ── 8.15. COST_PARTICIPANTS ────────────────────────────────────
 ALTER TABLE public.cost_participants ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "cost_participants_select"
@@ -793,7 +947,7 @@ CREATE POLICY "cost_participants_all_admin"
   );
 
 
--- ── 7.16. ACTIVITY_LOGS — apenas INSERT, nunca UPDATE/DELETE ──
+-- ── 8.16. ACTIVITY_LOGS — apenas INSERT, nunca UPDATE/DELETE ──
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "activity_logs_select_admin"
@@ -809,7 +963,7 @@ CREATE POLICY "activity_logs_insert_member"
 
 
 -- ─────────────────────────────────────────────────────────────
--- PARTE 8: GATILHO AUTOMÁTICO DE PERFIL AO REGISTRAR NO AUTH
+-- PARTE 9: GATILHO AUTOMÁTICO DE PERFIL AO REGISTRAR NO AUTH
 -- ─────────────────────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
