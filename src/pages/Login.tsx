@@ -77,32 +77,39 @@ export const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col justify-center items-center bg-gradient-to-b from-cyan-50/60 via-slate-50 to-amber-50/30 px-4 py-12">
-      {/* Container Central do Cartão */}
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
+    <div className="min-h-screen flex flex-col justify-center items-center relative overflow-hidden bg-tropical-bg px-4 py-12">
+      {/* Fundo suave com clima de verão */}
+      <div 
+        className="absolute inset-0 bg-cover bg-center opacity-25 filter blur-xs"
+        style={{ backgroundImage: `url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=2000&q=80')` }}
+      />
+      <div className="absolute inset-0 bg-gradient-to-b from-tropical-sand-50/90 via-tropical-bg/95 to-tropical-bg" />
+
+      {/* Container Central com Estética Tropical Contemporânea */}
+      <div className="w-full max-w-md bg-white rounded-3xl shadow-tropical-lg border border-tropical-sand-border/60 overflow-hidden relative z-10 animate-slide-up">
         
-        {/* Topo com ilustração e identidade */}
-        <div className="relative bg-gradient-to-br from-cyan-500 via-teal-500 to-coastal-ocean p-8 text-white text-center">
-          <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30 shadow-inner">
-            <Palmtree className="w-8 h-8 text-white" />
+        {/* Topo com Ilustração e Identidade */}
+        <div className="relative bg-gradient-to-br from-tropical-ocean-800 via-tropical-ocean to-tropical-turquoise p-8 text-white text-center">
+          <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30 shadow-inner group">
+            <Palmtree className="w-7 h-7 text-white" />
           </div>
-          <h1 className="font-display font-extrabold text-2xl tracking-tight text-white drop-shadow-sm">
+          <h1 className="font-display font-extrabold text-2xl md:text-3xl tracking-tight text-white drop-shadow-sm">
             Rota de Verão
           </h1>
-          <p className="text-cyan-100 text-xs mt-1 font-medium">
-            Acesso privado à viagem em grupo
+          <p className="text-tropical-sand-100 text-xs mt-1.5 font-medium">
+            Acesso exclusivo ao planejamento da nossa viagem
           </p>
         </div>
 
-        {/* Alternador de abas: Convidado vs Administradora */}
-        <div className="flex border-b border-slate-100 bg-slate-50/60">
+        {/* Alternador de Abas: Convidado vs Administradora */}
+        <div className="flex border-b border-tropical-sand-border/40 bg-tropical-sand-50/50">
           <button
             type="button"
             onClick={() => { setMode('pin'); setErrorMsg(null); }}
-            className={`flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+            className={`flex-1 py-3 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
               mode === 'pin'
-                ? 'bg-white text-cyan-600 border-b-2 border-cyan-500 shadow-xs'
-                : 'text-slate-500 hover:text-slate-700'
+                ? 'bg-white text-tropical-ocean border-b-2 border-tropical-ocean shadow-xs'
+                : 'text-tropical-text-muted hover:text-tropical-ocean'
             }`}
           >
             <KeyRound className="w-3.5 h-3.5" />
@@ -111,10 +118,10 @@ export const Login: React.FC = () => {
           <button
             type="button"
             onClick={() => { setMode('admin'); setErrorMsg(null); }}
-            className={`flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+            className={`flex-1 py-3 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
               mode === 'admin'
-                ? 'bg-white text-cyan-600 border-b-2 border-cyan-500 shadow-xs'
-                : 'text-slate-500 hover:text-slate-700'
+                ? 'bg-white text-tropical-ocean border-b-2 border-tropical-ocean shadow-xs'
+                : 'text-tropical-text-muted hover:text-tropical-ocean'
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5" />
@@ -125,8 +132,8 @@ export const Login: React.FC = () => {
         {/* Conteúdo do Formulário */}
         <div className="p-6 md:p-8">
           {errorMsg && (
-            <div className="mb-5 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+            <div className="mb-5 p-3.5 rounded-2xl bg-tropical-coral-50 border border-tropical-coral-200 text-tropical-coral-600 text-xs flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{errorMsg}</span>
             </div>
           )}
@@ -135,8 +142,8 @@ export const Login: React.FC = () => {
             /* Modo PIN de 6 dígitos */
             <form onSubmit={handlePinSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Código de Acesso (PIN)
+                <label className="block text-xs font-bold text-tropical-text mb-2">
+                  Código de Acesso (PIN de 6 dígitos)
                 </label>
                 <input
                   type="text"
@@ -144,10 +151,10 @@ export const Login: React.FC = () => {
                   placeholder="000000"
                   value={pin}
                   onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                  className="w-full text-center tracking-[0.5em] text-2xl font-bold font-display px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 bg-slate-50/50"
+                  className="w-full text-center tracking-[0.5em] text-3xl font-extrabold font-mono px-4 py-3.5 rounded-2xl border border-tropical-sand-border focus:outline-none focus:ring-2 focus:ring-tropical-turquoise focus:border-tropical-ocean bg-tropical-sand-50/50 text-tropical-text transition-all"
                   autoFocus
                 />
-                <p className="text-[11px] text-slate-500 mt-2 text-center">
+                <p className="text-[11px] text-tropical-text-muted mt-2.5 text-center">
                   Digite os 6 números do convite enviado pela organizadora no WhatsApp.
                 </p>
               </div>
@@ -155,13 +162,13 @@ export const Login: React.FC = () => {
               <button
                 type="submit"
                 disabled={isSubmitting || pin.length < 6}
-                className="w-full mt-2 py-3 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 text-white font-semibold text-sm transition-all shadow-md flex items-center justify-center gap-2"
+                className="w-full mt-2 py-3.5 px-4 rounded-xl bg-tropical-ocean hover:bg-tropical-ocean-600 disabled:opacity-50 text-white font-bold text-sm transition-all shadow-tropical flex items-center justify-center gap-2 cursor-pointer active:scale-95"
               >
                 {isSubmitting ? (
                   'Verificando...'
                 ) : (
                   <>
-                    Acessar Viagem <ArrowRight className="w-4 h-4" />
+                    Acessar a Viagem <ArrowRight className="w-4 h-4" />
                   </>
                 )}
               </button>
@@ -170,11 +177,11 @@ export const Login: React.FC = () => {
             /* Modo Administradora (E-mail + Senha) */
             <form onSubmit={handleAdminSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="block text-xs font-bold text-tropical-text mb-1.5">
                   E-mail da Administradora
                 </label>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-tropical-text-muted">
                     <Mail className="w-4 h-4" />
                   </div>
                   <input
@@ -182,17 +189,17 @@ export const Login: React.FC = () => {
                     placeholder="organizadora@exemplo.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 bg-slate-50/50"
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-tropical-sand-border text-sm focus:outline-none focus:ring-2 focus:ring-tropical-turquoise focus:border-tropical-ocean bg-tropical-sand-50/50 text-tropical-text"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="block text-xs font-bold text-tropical-text mb-1.5">
                   Senha
                 </label>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-tropical-text-muted">
                     <Lock className="w-4 h-4" />
                   </div>
                   <input
@@ -200,7 +207,7 @@ export const Login: React.FC = () => {
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 bg-slate-50/50"
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-tropical-sand-border text-sm focus:outline-none focus:ring-2 focus:ring-tropical-turquoise focus:border-tropical-ocean bg-tropical-sand-50/50 text-tropical-text"
                   />
                 </div>
               </div>
@@ -208,7 +215,7 @@ export const Login: React.FC = () => {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full mt-2 py-3 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 text-white font-semibold text-sm transition-all shadow-md flex items-center justify-center gap-2"
+                className="w-full mt-2 py-3.5 px-4 rounded-xl bg-tropical-ocean hover:bg-tropical-ocean-600 disabled:opacity-50 text-white font-bold text-sm transition-all shadow-tropical flex items-center justify-center gap-2 cursor-pointer active:scale-95"
               >
                 {isSubmitting ? (
                   'Entrando...'
@@ -222,9 +229,9 @@ export const Login: React.FC = () => {
           )}
 
           {!isConfigured && (
-            <div className="mt-6 pt-4 border-t border-slate-100 text-center">
-              <span className="text-[11px] text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full font-medium inline-block">
-                Modo Demonstração Ativo (Marco 3)
+            <div className="mt-6 pt-4 border-t border-tropical-sand-border/40 text-center">
+              <span className="text-[11px] text-tropical-text-secondary bg-tropical-sand-50 px-3 py-1 rounded-full font-semibold border border-tropical-sand-border/50 inline-block">
+                Modo Demonstração Seguro Ativo
               </span>
             </div>
           )}
@@ -233,4 +240,3 @@ export const Login: React.FC = () => {
     </div>
   );
 };
-

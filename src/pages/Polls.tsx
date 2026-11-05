@@ -3,10 +3,11 @@ import {
   Clock, 
   Plus, 
   HelpCircle,
-  Check
+  Check,
+  Vote,
+  CheckCircle2
 } from 'lucide-react';
 import { MOCK_POLLS } from '../data/mockData';
-import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Poll } from '../types';
@@ -19,7 +20,7 @@ interface PollsProps {
 export const Polls: React.FC<PollsProps> = ({ currentRole }) => {
   const [pollsList, setPollsList] = useState<Poll[]>(MOCK_POLLS);
 
-  // Simulação de registro de voto
+  // Registro de voto interativo
   const handleVote = (pollId: string, optionId: string) => {
     setPollsList(prev => prev.map(poll => {
       if (poll.id !== pollId) return poll;
@@ -52,17 +53,22 @@ export const Polls: React.FC<PollsProps> = ({ currentRole }) => {
   };
 
   return (
-    <PageShell>
-    <div className="space-y-8">
+    <PageShell className="space-y-8 animate-fade-in pb-16">
       
-      {/* Cabeçalho */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* ── CABEÇALHO DA PÁGINA ────────────────────────────────────────────── */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-tropical-sand-border/40 pb-6">
         <div>
-          <h1 className="font-display font-bold text-2xl md:text-3xl text-coastal-ocean">
-            Votações & Decisões Democráticas
+          <div className="flex items-center gap-2">
+            <span className="badge-tropical bg-tropical-turquoise/15 text-tropical-ocean border border-tropical-turquoise/30">
+              <Vote className="w-3.5 h-3.5 text-tropical-ocean" />
+              Decisões Coletivas
+            </span>
+          </div>
+          <h1 className="font-display font-extrabold text-2xl md:text-3xl text-tropical-text mt-1.5">
+            Votações & Enquetes da Viagem
           </h1>
-          <p className="text-slate-600 text-sm mt-1">
-            Escolhas em grupo com prazos definidos e apuração transparente para todos os participantes.
+          <p className="text-tropical-text-muted text-sm mt-0.5">
+            Decisões democráticas com apuração em tempo real e prazos bem definidos para todo o grupo.
           </p>
         </div>
 
@@ -73,47 +79,56 @@ export const Polls: React.FC<PollsProps> = ({ currentRole }) => {
         )}
       </div>
 
-      {/* Regras de Votação */}
-      <aside aria-label="Informações sobre regras de votação" className="bg-cyan-50/70 border border-cyan-200 rounded-2xl p-4 flex items-start gap-3">
-        <HelpCircle className="w-5 h-5 text-coastal-water-dark shrink-0 mt-0.5" />
-        <div className="text-xs md:text-sm text-cyan-950 leading-relaxed">
-          <strong>Como funcionam os votos?</strong> Cada participante autenticado possui direito a 1 voto único por enquete. A administradora pode configurar se é permitido alterar o voto antes do encerramento do prazo. Os resultados parciais são atualizados instantaneamente.
+      {/* ── REGRAS DE VOTAÇÃO ──────────────────────────────────────────────── */}
+      <aside aria-label="Informações sobre regras de votação" className="bg-white border border-tropical-sand-border/60 rounded-3xl p-5 shadow-tropical-sm flex items-start gap-4">
+        <div className="w-10 h-10 rounded-2xl bg-tropical-turquoise-50 text-tropical-ocean flex items-center justify-center shrink-0 shadow-xs">
+          <HelpCircle className="w-5 h-5 text-tropical-ocean" />
+        </div>
+        <div className="text-xs md:text-sm text-tropical-text leading-relaxed space-y-1">
+          <p className="font-bold text-tropical-ocean">
+            Como funcionam as votações no Rota de Verão?
+          </p>
+          <p className="text-tropical-text-muted">
+            Cada participante autenticado tem direito a 1 voto por enquete. Você pode mudar seu voto a qualquer momento antes do prazo de encerramento. Os percentuais são atualizados instantaneamente conforme os amigos votam.
+          </p>
         </div>
       </aside>
 
-      {/* Lista de Enquetes */}
+      {/* ── LISTA DE ENQUETES ──────────────────────────────────────────────── */}
       <div className="space-y-6">
         {pollsList.map((poll) => (
-          <Card key={poll.id} padding="lg" className="space-y-5 border-t-4 border-t-coastal-ocean">
-            
+          <div
+            key={poll.id}
+            className="tropical-card p-6 md:p-8 space-y-5 border-t-4 border-t-tropical-ocean"
+          >
             {/* Topo da Enquete */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-coastal-sand/40 pb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-tropical-sand-border/30 pb-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <Badge variant={poll.isClosed ? 'danger' : 'success'} size="sm">
+                  <Badge variant={poll.isClosed ? 'danger' : 'palm'} size="sm">
                     {poll.isClosed ? 'Enquete Encerrada' : 'Votação Aberta'}
                   </Badge>
-                  <span className="text-xs text-slate-500 font-medium">
+                  <span className="text-xs text-tropical-text-muted font-bold">
                     {poll.totalVotes} votos computados
                   </span>
                 </div>
-                <h2 className="font-display font-bold text-xl text-coastal-ocean mt-1">
+                <h2 className="font-display font-extrabold text-xl md:text-2xl text-tropical-text mt-1.5">
                   {poll.title}
                 </h2>
               </div>
 
-              <div className="flex items-center gap-2 text-xs font-semibold text-amber-800 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200">
-                <Clock className="w-4 h-4 text-amber-600" />
+              <div className="flex items-center gap-2 text-xs font-bold text-tropical-coral bg-tropical-coral-50 px-3.5 py-1.5 rounded-full border border-tropical-coral-200 shrink-0">
+                <Clock className="w-3.5 h-3.5 text-tropical-coral" />
                 <span>Encerra: {poll.deadline}</span>
               </div>
             </div>
 
-            <p className="text-xs md:text-sm text-slate-600 leading-relaxed">
+            <p className="text-xs md:text-sm text-tropical-text-secondary leading-relaxed">
               {poll.description}
             </p>
 
-            {/* Opções de Voto */}
-            <div className="space-y-3 pt-2">
+            {/* Opções de Voto com Barras e Estados Ativos */}
+            <div className="space-y-3 pt-1">
               {poll.options.map((option) => {
                 const isSelected = poll.userVotedOptionId === option.id;
 
@@ -121,38 +136,40 @@ export const Polls: React.FC<PollsProps> = ({ currentRole }) => {
                   <div
                     key={option.id}
                     onClick={() => handleVote(poll.id, option.id)}
-                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer relative overflow-hidden ${
+                    className={`p-4 md:p-5 rounded-2xl border-2 transition-all cursor-pointer relative overflow-hidden group ${
                       isSelected
-                        ? 'border-coastal-ocean bg-coastal-ocean-50/50 shadow-sm'
-                        : 'border-coastal-sand/60 bg-white hover:border-coastal-water hover:bg-coastal-offwhite'
+                        ? 'border-tropical-ocean bg-tropical-turquoise/10 shadow-tropical-sm'
+                        : 'border-tropical-sand-border/60 bg-white hover:border-tropical-turquoise hover:bg-tropical-sand-50/40'
                     }`}
                   >
-                    {/* Barra de Progresso de Fundo */}
+                    {/* Barra de Progresso Suave no Fundo */}
                     <div
-                      className="absolute top-0 bottom-0 left-0 bg-coastal-ocean-100/40 transition-all duration-500 pointer-events-none"
+                      className="absolute top-0 bottom-0 left-0 bg-tropical-turquoise/15 transition-all duration-700 ease-out pointer-events-none"
                       style={{ width: `${option.percentage}%` }}
                     />
 
-                    <div className="relative z-10 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
+                    <div className="relative z-10 flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3.5">
                         <div
-                          className={`w-6 h-6 rounded-full flex items-center justify-center border-2 transition-all ${
+                          className={`w-6 h-6 rounded-full flex items-center justify-center border-2 transition-all shrink-0 ${
                             isSelected
-                              ? 'border-coastal-ocean bg-coastal-ocean text-white'
-                              : 'border-slate-300 bg-white text-transparent'
+                              ? 'border-tropical-ocean bg-tropical-ocean text-white shadow-xs'
+                              : 'border-tropical-sand-border bg-white text-transparent group-hover:border-tropical-turquoise'
                           }`}
                         >
                           <Check className="w-3.5 h-3.5 stroke-[3]" />
                         </div>
                         <div>
-                          <div className="font-semibold text-sm text-coastal-ocean flex items-center gap-2">
+                          <div className="font-bold text-sm md:text-base text-tropical-text flex items-center gap-2">
                             {option.title}
                             {isSelected && (
-                              <Badge variant="ocean" size="sm">Seu voto</Badge>
+                              <span className="badge-tropical bg-tropical-ocean text-white text-[10px] px-2 py-0.5 font-bold">
+                                Seu voto
+                              </span>
                             )}
                           </div>
                           {option.description && (
-                            <div className="text-xs text-slate-500 mt-0.5">
+                            <div className="text-xs text-tropical-text-muted mt-0.5">
                               {option.description}
                             </div>
                           )}
@@ -160,10 +177,10 @@ export const Polls: React.FC<PollsProps> = ({ currentRole }) => {
                       </div>
 
                       <div className="text-right shrink-0">
-                        <span className="font-display font-bold text-lg text-coastal-ocean">
+                        <span className="font-display font-extrabold text-xl md:text-2xl text-tropical-ocean">
                           {option.percentage}%
                         </span>
-                        <span className="block text-[11px] text-slate-500">
+                        <span className="block text-[11px] font-semibold text-tropical-text-muted">
                           {option.voteCount} {option.voteCount === 1 ? 'voto' : 'votos'}
                         </span>
                       </div>
@@ -173,22 +190,22 @@ export const Polls: React.FC<PollsProps> = ({ currentRole }) => {
               })}
             </div>
 
-            <div className="flex items-center justify-between pt-2 text-xs text-slate-500">
-              <span>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pt-3 border-t border-tropical-sand-border/30 text-xs text-tropical-text-muted gap-2">
+              <span className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-tropical-palm" />
                 {poll.allowsChangeVote
                   ? 'Você pode alterar sua escolha a qualquer momento antes do prazo.'
                   : 'Voto definitivo (não permite alteração).'}
               </span>
-              <span className="font-medium text-coastal-ocean">
-                {poll.userVotedOptionId ? 'Voto registrado com sucesso!' : 'Clique em uma opção para votar'}
+              <span className="font-bold text-tropical-ocean">
+                {poll.userVotedOptionId ? '✓ Seu voto está confirmado!' : 'Clique em qualquer opção acima para votar'}
               </span>
             </div>
 
-          </Card>
+          </div>
         ))}
       </div>
 
-    </div>
     </PageShell>
   );
 };

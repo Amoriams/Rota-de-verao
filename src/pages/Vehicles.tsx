@@ -4,11 +4,11 @@ import {
   Briefcase, 
   CheckCircle2, 
   ExternalLink, 
-  Info
+  Info,
+  Car,
+  MapPin
 } from 'lucide-react';
 import { MOCK_VEHICLES, MOCK_PARTICIPANTS } from '../data/mockData';
-import { Card } from '../components/common/Card';
-import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Vehicle } from '../types';
 import { PageShell } from '../components/layout/PageShell';
@@ -30,36 +30,43 @@ export const Vehicles: React.FC = () => {
   };
 
   return (
-    <PageShell>
-    <div className="space-y-8">
+    <PageShell className="space-y-8 animate-fade-in pb-16">
       
-      {/* Cabeçalho */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* ── CABEÇALHO DA PÁGINA ────────────────────────────────────────────── */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-tropical-sand-border/40 pb-6">
         <div>
-          <h1 className="font-display font-bold text-2xl md:text-3xl text-coastal-ocean">
+          <div className="flex items-center gap-2">
+            <span className="badge-tropical bg-tropical-turquoise/15 text-tropical-ocean border border-tropical-turquoise/30">
+              <Car className="w-3.5 h-3.5 text-tropical-ocean" />
+              Mobilidade & Translados
+            </span>
+          </div>
+          <h1 className="font-display font-extrabold text-2xl md:text-3xl text-tropical-text mt-1.5">
             Veículos & Aluguel para Translado
           </h1>
-          <p className="text-slate-600 text-sm mt-1">
+          <p className="text-tropical-text-muted text-sm mt-0.5">
             Organização dos carros para o trajeto Fortaleza &harr; Cumbuco e passeios nas praias vizinhas.
           </p>
         </div>
       </div>
 
-      {/* Alerta da Regra Rígida de Divisão de Veículos */}
-      <aside aria-label="Informações sobre rateio de veículos" className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-4 md:p-5 flex items-start gap-3.5">
-        <Info className="w-5 h-5 text-emerald-800 shrink-0 mt-0.5" />
-        <div className="text-xs md:text-sm text-emerald-900 leading-relaxed space-y-1">
-          <p className="font-semibold text-emerald-950">
-            Regra Rígida de Rateio: O custo do carro é dividido exclusivamente entre seus ocupantes!
+      {/* ── ALERTA DA REGRA RÍGIDA DE DIVISÃO ──────────────────────────────── */}
+      <aside aria-label="Informações sobre rateio de veículos" className="bg-white border border-tropical-sand-border/60 rounded-3xl p-5 shadow-tropical-sm flex items-start gap-4">
+        <div className="w-10 h-10 rounded-2xl bg-tropical-palm-50 text-tropical-palm flex items-center justify-center shrink-0 shadow-xs">
+          <Info className="w-5 h-5 text-tropical-palm" />
+        </div>
+        <div className="text-xs md:text-sm text-tropical-text leading-relaxed space-y-1">
+          <p className="font-bold text-tropical-ocean">
+            Regra Fundamental: O custo do veículo é rateado exclusivamente entre quem viaja nele!
           </p>
-          <p>
-            O sistema <strong>nunca</strong> divide o valor de um carro entre todos os 10 participantes da viagem.
-            Se você for andar no Carro 01, o valor é dividido apenas entre as pessoas que estiverem no Carro 01.
+          <p className="text-tropical-text-muted">
+            O valor de cada carro <strong>nunca</strong> é dividido indistintamente entre todos os 10 membros da viagem.
+            Se você estiver no Carro 01, seu valor é rateado unicamente entre os ocupantes do Carro 01. Transparência justa e exata!
           </p>
         </div>
       </aside>
 
-      {/* Grid de Veículos */}
+      {/* ── GRID DE VEÍCULOS ───────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {vehiclesList.map((vehicle) => {
           const isUserInterested = vehicle.interestedMemberIds.includes(currentUserId);
@@ -69,82 +76,96 @@ export const Vehicles: React.FC = () => {
           const occupiedCount = vehicle.interestedMemberIds.length;
           const costPerPerson = occupiedCount > 0 ? vehicle.totalAmount / occupiedCount : vehicle.totalAmount;
           const isFull = occupiedCount >= vehicle.passengerCapacity;
+          const occupancyPct = Math.round((occupiedCount / vehicle.passengerCapacity) * 100);
 
           return (
-            <Card key={vehicle.id} padding="none" className="overflow-hidden flex flex-col justify-between border-t-4 border-t-coastal-ocean">
-              
+            <div
+              key={vehicle.id}
+              className="tropical-card overflow-hidden flex flex-col justify-between group border-t-4 border-t-tropical-ocean"
+            >
               <div>
                 {/* Imagem do Carro */}
-                <div className="relative h-56 bg-slate-100 overflow-hidden">
+                <div className="relative h-60 bg-tropical-sand-100 overflow-hidden">
                   <img
                     src={vehicle.imageUrl}
                     alt={vehicle.model}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   />
                   <div className="absolute top-3 left-3">
-                    <Badge variant="ocean" size="sm">
+                    <span className="badge-tropical bg-white/90 backdrop-blur-md text-tropical-ocean border border-white/50 shadow-xs">
                       {vehicle.category}
-                    </Badge>
+                    </span>
                   </div>
-                  <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-xs text-coastal-ocean font-bold text-xs px-2.5 py-1 rounded-full shadow-xs">
+                  <div className="absolute top-3 right-3 bg-tropical-text/80 backdrop-blur-md text-white font-semibold text-xs px-3 py-1 rounded-full shadow-xs">
                     Locadora: {vehicle.rentalCompany}
                   </div>
                 </div>
 
                 {/* Dados do Carro */}
-                <div className="p-5 md:p-6 space-y-4">
+                <div className="p-5 md:p-6 space-y-5">
                   <div>
-                    <h3 className="font-display font-bold text-xl text-coastal-ocean">
+                    <h3 className="font-display font-extrabold text-xl text-tropical-text">
                       {vehicle.model}
                     </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="text-xs text-tropical-text-muted mt-1 flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-tropical-coral shrink-0" />
                       {vehicle.totalDays} diárias &bull; Retirada e devolução no {vehicle.pickupLocation}
                     </p>
                   </div>
 
                   {/* Capacidade e Malas */}
-                  <div className="grid grid-cols-2 gap-3 p-3 rounded-xl bg-coastal-offwhite border border-coastal-sand/50 text-xs">
-                    <div className="flex items-center gap-2 text-slate-700">
-                      <Users className="w-4 h-4 text-coastal-ocean" />
-                      <span>Capacidade: <strong>{vehicle.passengerCapacity} passageiros</strong></span>
+                  <div className="grid grid-cols-2 gap-3 p-3.5 rounded-2xl bg-tropical-sand-50/60 border border-tropical-sand-border/40 text-xs">
+                    <div className="flex items-center gap-2 text-tropical-text font-semibold">
+                      <Users className="w-4 h-4 text-tropical-ocean" />
+                      <span>{vehicle.passengerCapacity} passageiros</span>
                     </div>
-                    <div className="flex items-center gap-2 text-slate-700">
-                      <Briefcase className="w-4 h-4 text-coastal-ocean" />
-                      <span>Porta-malas: <strong>{vehicle.luggageCapacity} malas grandes</strong></span>
+                    <div className="flex items-center gap-2 text-tropical-text font-semibold">
+                      <Briefcase className="w-4 h-4 text-tropical-palm" />
+                      <span>{vehicle.luggageCapacity} malas grandes</span>
                     </div>
                   </div>
 
                   {/* Lista de Interessados / Ocupantes */}
-                  <div className="space-y-2">
+                  <div className="space-y-2.5">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-slate-600 uppercase tracking-wider">
-                        Passageiros Confirmados no Carro:
+                      <span className="font-bold text-tropical-text-muted uppercase tracking-wider">
+                        Passageiros Inscritos:
                       </span>
-                      <span className="font-bold text-coastal-ocean">
-                        {occupiedCount} / {vehicle.passengerCapacity} vagas preenchidas
+                      <span className="font-bold text-tropical-ocean">
+                        {occupiedCount} de {vehicle.passengerCapacity} vagas preenchidas ({occupancyPct}%)
                       </span>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
+                    {/* Barra de Ocupação */}
+                    <div className="w-full bg-tropical-sand-100 rounded-full h-2 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          isFull ? 'bg-tropical-coral' : 'bg-tropical-palm'
+                        }`}
+                        style={{ width: `${Math.min(occupancyPct, 100)}%` }}
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 pt-1">
                       {interestedParticipants.map((p) => (
                         <div
                           key={p.id}
-                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-coastal-sand/70 text-xs text-coastal-ocean shadow-xs"
+                          className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-tropical-sand-border/60 text-xs text-tropical-text shadow-xs"
                         >
                           <img
                             src={p.avatarUrl}
                             alt={p.name}
                             className="w-4 h-4 rounded-full object-cover"
                           />
-                          <span className="font-medium">{p.name.split(' ')[0]}</span>
+                          <span className="font-semibold">{p.name.split(' ')[0]}</span>
                           {p.id === currentUserId && (
-                            <span className="text-[10px] text-coastal-coral font-bold">(Você)</span>
+                            <span className="text-[10px] text-tropical-coral font-bold">(Você)</span>
                           )}
                         </div>
                       ))}
                       {occupiedCount === 0 && (
-                        <span className="text-xs text-slate-400 italic">
-                          Nenhum passageiro inscrito ainda.
+                        <span className="text-xs text-tropical-text-muted italic">
+                          Nenhum passageiro inscrito ainda. Vagas livres!
                         </span>
                       )}
                     </div>
@@ -153,25 +174,25 @@ export const Vehicles: React.FC = () => {
               </div>
 
               {/* Rodapé com Cálculo de Cota Exclusiva e Botão de Interesse */}
-              <div className="p-5 md:p-6 bg-coastal-offwhite border-t border-coastal-sand/50 space-y-4">
+              <div className="p-5 md:p-6 bg-tropical-sand-50/50 border-t border-tropical-sand-border/40 space-y-4">
                 <div className="flex items-baseline justify-between">
                   <div>
-                    <span className="text-[10px] uppercase font-semibold text-slate-500 block">
-                      Cota Exclusiva por Passageiro
+                    <span className="text-[10px] uppercase font-bold text-tropical-text-muted block">
+                      Cota por ocupante
                     </span>
-                    <span className="text-2xl font-bold font-display text-coastal-ocean">
+                    <span className="text-2xl font-extrabold font-display text-tropical-ocean">
                       R$ {costPerPerson.toFixed(2)}
                     </span>
-                    <span className="text-[10px] text-slate-500 block">
-                      (R$ {vehicle.totalAmount.toFixed(2)} divididos entre os {occupiedCount || 1} ocupantes)
+                    <span className="text-[10px] text-tropical-text-muted block">
+                      (R$ {vehicle.totalAmount.toFixed(2)} divididos entre {occupiedCount || 1} pessoas)
                     </span>
                   </div>
 
                   <div className="text-right">
-                    <span className="text-[10px] uppercase font-semibold text-slate-500 block">
-                      Diária da locadora
+                    <span className="text-[10px] uppercase font-bold text-tropical-text-muted block">
+                      Diária locadora
                     </span>
-                    <span className="text-sm font-semibold text-slate-700">
+                    <span className="text-sm font-bold text-tropical-text">
                       R$ {vehicle.dailyRate.toFixed(2)} / dia
                     </span>
                   </div>
@@ -208,12 +229,11 @@ export const Vehicles: React.FC = () => {
                 </div>
               </div>
 
-            </Card>
+            </div>
           );
         })}
       </div>
 
-    </div>
     </PageShell>
   );
 };

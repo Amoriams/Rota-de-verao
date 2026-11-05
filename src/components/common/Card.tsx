@@ -17,7 +17,7 @@ export const Card: React.FC<CardProps> = ({
 }) => {
   const paddingStyles = {
     none: '',
-    sm: 'p-3 md:p-4',
+    sm: 'p-3.5 md:p-4',
     md: 'p-5 md:p-6',
     lg: 'p-6 md:p-8',
   };
@@ -25,12 +25,11 @@ export const Card: React.FC<CardProps> = ({
   return (
     <div
       onClick={onClick}
-      className={`bg-white rounded-2xl border border-coastal-sand/60 shadow-coastal transition-all duration-300 ${
-        hoverable ? 'hover:shadow-coastal-hover hover:border-coastal-water/40 cursor-pointer' : ''
+      className={`bg-white rounded-2xl border border-tropical-sand-border/40 shadow-tropical-sm transition-all duration-300 ${
+        hoverable ? 'hover:shadow-tropical hover:border-tropical-turquoise/50 hover:-translate-y-0.5 cursor-pointer' : ''
       } ${paddingStyles[padding]} ${className}`}
     >
       {children}
     </div>
   );
 };
-

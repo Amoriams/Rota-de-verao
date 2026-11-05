@@ -2,11 +2,9 @@ import React, { useState } from 'react';
 import { 
   Receipt, 
   Calendar, 
-  HelpCircle,
-  Filter
+  HelpCircle
 } from 'lucide-react';
 import { MOCK_EXPENSES } from '../data/mockData';
-import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { PageShell } from '../components/layout/PageShell';
 
@@ -36,143 +34,147 @@ export const Expenses: React.FC = () => {
   };
 
   return (
-    <PageShell>
-    <div className="space-y-8">
+    <PageShell className="space-y-8 animate-fade-in pb-16">
       
-      {/* Cabeçalho */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* ── CABEÇALHO DA PÁGINA ────────────────────────────────────────────── */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-tropical-sand-border/40 pb-6">
         <div>
-          <h1 className="font-display font-bold text-2xl md:text-3xl text-coastal-ocean">
-            Financeiro & Divisão Justa de Custos
+          <div className="flex items-center gap-2">
+            <span className="badge-tropical bg-tropical-turquoise/15 text-tropical-ocean border border-tropical-turquoise/30">
+              <Receipt className="w-3.5 h-3.5 text-tropical-ocean" />
+              Gestão Financeira
+            </span>
+          </div>
+          <h1 className="font-display font-extrabold text-2xl md:text-3xl text-tropical-text mt-1.5">
+            Financeiro & Divisão de Custos
           </h1>
-          <p className="text-slate-600 text-sm mt-1">
+          <p className="text-tropical-text-muted text-sm mt-0.5">
             Transparência contábil completa: cálculos matemáticos exatos e extrato individual sem atrito.
           </p>
         </div>
       </div>
 
-      {/* Regra de Ouro: Separação dos 4 Conceitos */}
-      <aside aria-label="Informações sobre separação dos 4 conceitos financeiros" className="bg-coastal-ocean-50 border border-coastal-ocean-200 rounded-2xl p-5 space-y-3">
-        <div className="flex items-center gap-2 text-coastal-ocean font-bold text-sm">
-          <HelpCircle className="w-5 h-5 text-coastal-ocean-600" />
-          A Regra dos 4 Passos Financeiros no Rota de Verão
+      {/* ── A REGRA DOS 4 PASSOS FINANCEIROS ───────────────────────────────── */}
+      <aside aria-label="Informações sobre separação dos 4 conceitos financeiros" className="bg-white border border-tropical-sand-border/60 rounded-3xl p-6 shadow-tropical-sm space-y-4">
+        <div className="flex items-center gap-2.5 text-tropical-ocean font-bold text-base">
+          <HelpCircle className="w-5 h-5 text-tropical-ocean" />
+          Como Funciona o Rateio Justo no Rota de Verão
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-          <div className="p-3 bg-white rounded-xl border border-coastal-ocean-100 space-y-1">
-            <span className="font-bold text-coastal-ocean block">1. Confirmação</span>
-            <p className="text-slate-600">Mostra quem vai viajar. Não cria débito automático.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+          <div className="p-4 bg-tropical-sand-50/50 rounded-2xl border border-tropical-sand-border/50 space-y-1">
+            <span className="font-extrabold text-tropical-ocean block text-sm">1. Confirmação</span>
+            <p className="text-tropical-text-secondary leading-relaxed">Mostra quem vai viajar. Não cria débito automático.</p>
           </div>
-          <div className="p-3 bg-white rounded-xl border border-coastal-ocean-100 space-y-1">
-            <span className="font-bold text-coastal-ocean block">2. Interesse Real</span>
-            <p className="text-slate-600">Inscrição no rateio daquele item (ex: entrar no Carro 01).</p>
+          <div className="p-4 bg-tropical-sand-50/50 rounded-2xl border border-tropical-sand-border/50 space-y-1">
+            <span className="font-extrabold text-tropical-turquoise-700 block text-sm">2. Interesse Real</span>
+            <p className="text-tropical-text-secondary leading-relaxed">Inscrição no rateio daquele item (ex: entrar no Carro 01).</p>
           </div>
-          <div className="p-3 bg-white rounded-xl border border-coastal-ocean-100 space-y-1">
-            <span className="font-bold text-coastal-ocean block">3. Cota Calculada</span>
-            <p className="text-slate-600">O valor exato dividido apenas entre os envolvidos.</p>
+          <div className="p-4 bg-tropical-sand-50/50 rounded-2xl border border-tropical-sand-border/50 space-y-1">
+            <span className="font-extrabold text-tropical-coral block text-sm">3. Cota Calculada</span>
+            <p className="text-tropical-text-secondary leading-relaxed">O valor exato dividido apenas entre os envolvidos.</p>
           </div>
-          <div className="p-3 bg-white rounded-xl border border-coastal-ocean-100 space-y-1">
-            <span className="font-bold text-coastal-ocean block">4. Quitação (Pix)</span>
-            <p className="text-slate-600">Pagamento externo direto à organizadora.</p>
+          <div className="p-4 bg-tropical-sand-50/50 rounded-2xl border border-tropical-sand-border/50 space-y-1">
+            <span className="font-extrabold text-tropical-palm block text-sm">4. Quitação (Pix)</span>
+            <p className="text-tropical-text-secondary leading-relaxed">Pagamento externo direto à organizadora.</p>
           </div>
         </div>
       </aside>
 
-      {/* Cartões de Resumo Financeiro */}
+      {/* ── CARTÕES DE RESUMO FINANCEIRO ───────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         {/* Total da Viagem */}
-        <Card padding="md" className="space-y-2 border-l-4 border-l-coastal-ocean">
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+        <div className="tropical-card p-6 space-y-2 border-l-4 border-l-tropical-ocean">
+          <span className="text-xs font-bold text-tropical-text-muted uppercase tracking-wider block">
             Total Lançado da Viagem
           </span>
-          <div className="text-3xl font-bold font-display text-coastal-ocean">
+          <div className="text-3xl font-extrabold font-display text-tropical-text">
             R$ {totalTripAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </div>
-          <p className="text-xs text-slate-500">
-            Soma de 4 despesas cadastradas até agora
+          <p className="text-xs text-tropical-text-muted">
+            Soma de 4 despesas cadastradas para o grupo
           </p>
-        </Card>
+        </div>
 
         {/* Extrato Pessoal de Carol */}
-        <Card padding="md" className="space-y-2 border-l-4 border-l-coastal-coral bg-orange-50/20">
+        <div className="tropical-card p-6 space-y-2 border-l-4 border-l-tropical-coral bg-tropical-coral-50/20">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-coastal-coral uppercase tracking-wider">
-              Sua Responsabilidade Estimada
+            <span className="text-xs font-bold text-tropical-coral uppercase tracking-wider">
+              Sua Responsabilidade
             </span>
-            <Badge variant="coral" size="sm">Seu Extrato</Badge>
+            <span className="badge-tropical bg-tropical-coral text-white text-[10px]">
+              Seu Extrato
+            </span>
           </div>
-          <div className="text-3xl font-bold font-display text-coastal-coral-dark">
+          <div className="text-3xl font-extrabold font-display text-tropical-coral">
             R$ {myEstimatedTotal.toFixed(2)}
           </div>
-          <p className="text-xs text-slate-600">
-            Sua cota na Casa (R$ 700) + Carro 01 (R$ 323,75) + Mercado (R$ 200)
+          <p className="text-xs text-tropical-text-secondary">
+            Cota na Casa (R$ 700) + Carro 01 (R$ 323,75) + Mercado (R$ 200)
           </p>
-        </Card>
+        </div>
 
         {/* Status de Pagamentos */}
-        <Card padding="md" className="space-y-2 border-l-4 border-l-emerald-600">
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-            Pagamentos Realizados
+        <div className="tropical-card p-6 space-y-2 border-l-4 border-l-tropical-palm">
+          <span className="text-xs font-bold text-tropical-text-muted uppercase tracking-wider block">
+            Pagamentos Quitado
           </span>
-          <div className="text-3xl font-bold font-display text-emerald-800">
+          <div className="text-3xl font-extrabold font-display text-tropical-palm">
             0%
           </div>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-tropical-text-muted">
             Aguardando fechamento da casa pela organizadora
           </p>
-        </Card>
+        </div>
 
       </div>
 
-      {/* Tabela de Despesas Detalhada */}
-      <div className="space-y-4">
+      {/* ── TABELA DE DESPESAS DETALHADA COM FILTROS ───────────────────────── */}
+      <div className="space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <h2 className="font-display font-bold text-xl text-coastal-ocean flex items-center gap-2">
-            <Receipt className="w-5 h-5 text-coastal-ocean" />
-            Demonstrativo de Despesas da Viagem
+          <h2 className="font-display font-bold text-xl text-tropical-text flex items-center gap-2">
+            <Receipt className="w-5 h-5 text-tropical-ocean" />
+            Demonstrativo de Gastos da Viagem
           </h2>
 
           {/* Filtro de Categorias */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-            <span className="text-slate-400 flex items-center gap-1">
-              <Filter className="w-3.5 h-3.5" />
-            </span>
+          <div className="inline-flex p-1 rounded-2xl bg-white border border-tropical-sand-border/60 shadow-tropical-sm">
             <button
               onClick={() => setSelectedCategory('all')}
-              className={`px-3 py-1.5 rounded-full font-medium transition-colors ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 selectedCategory === 'all'
-                  ? 'bg-coastal-ocean text-white'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  ? 'bg-tropical-ocean text-white shadow-tropical-sm'
+                  : 'text-tropical-text-secondary hover:text-tropical-ocean'
               }`}
             >
               Todas
             </button>
             <button
               onClick={() => setSelectedCategory('accommodation')}
-              className={`px-3 py-1.5 rounded-full font-medium transition-colors ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 selectedCategory === 'accommodation'
-                  ? 'bg-coastal-ocean text-white'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  ? 'bg-tropical-ocean text-white shadow-tropical-sm'
+                  : 'text-tropical-text-secondary hover:text-tropical-ocean'
               }`}
             >
               Hospedagem
             </button>
             <button
               onClick={() => setSelectedCategory('vehicle')}
-              className={`px-3 py-1.5 rounded-full font-medium transition-colors ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 selectedCategory === 'vehicle'
-                  ? 'bg-coastal-ocean text-white'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  ? 'bg-tropical-ocean text-white shadow-tropical-sm'
+                  : 'text-tropical-text-secondary hover:text-tropical-ocean'
               }`}
             >
               Veículos
             </button>
             <button
               onClick={() => setSelectedCategory('food')}
-              className={`px-3 py-1.5 rounded-full font-medium transition-colors ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 selectedCategory === 'food'
-                  ? 'bg-coastal-ocean text-white'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  ? 'bg-tropical-ocean text-white shadow-tropical-sm'
+                  : 'text-tropical-text-secondary hover:text-tropical-ocean'
               }`}
             >
               Alimentação
@@ -180,65 +182,64 @@ export const Expenses: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4">
+        <div className="grid grid-cols-1 gap-5">
           {filteredExpenses.map((expense) => (
-            <Card key={expense.id} padding="md" className="space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+            <div key={expense.id} className="tropical-card p-6 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="ocean" size="sm">
+                    <Badge variant={expense.category === 'accommodation' ? 'ocean' : expense.category === 'vehicle' ? 'palm' : 'sand'} size="sm">
                       {expense.category === 'accommodation' ? 'Hospedagem' : expense.category === 'vehicle' ? 'Veículo' : 'Mercado'}
                     </Badge>
-                    <span className="text-xs text-slate-500 font-medium">
-                      Critério: <strong className="text-coastal-ocean">{getSplitLabel(expense.splitCriterion)}</strong>
+                    <span className="text-xs text-tropical-text-muted font-medium">
+                      Critério: <strong className="text-tropical-text">{getSplitLabel(expense.splitCriterion)}</strong>
                     </span>
                   </div>
-                  <h3 className="font-display font-bold text-lg text-coastal-ocean mt-1">
+                  <h3 className="font-display font-extrabold text-lg text-tropical-text mt-1.5">
                     {expense.title}
                   </h3>
                 </div>
 
                 <div className="text-left sm:text-right">
-                  <span className="text-xs text-slate-500 block">Valor Total</span>
-                  <span className="text-2xl font-bold font-display text-coastal-ocean">
+                  <span className="text-[10px] text-tropical-text-muted font-bold uppercase block">Valor Total</span>
+                  <span className="text-2xl font-extrabold font-display text-tropical-ocean">
                     R$ {expense.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
               </div>
 
               {/* Detalhe do Cálculo Matemático */}
-              <div className="p-3 rounded-xl bg-coastal-offwhite border border-coastal-sand/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="p-4 rounded-2xl bg-tropical-sand-50/70 border border-tropical-sand-border/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                 <div>
-                  <span className="font-semibold text-slate-700 block">Fórmula de Divisão:</span>
-                  <span className="text-slate-600">
+                  <span className="font-bold text-tropical-text block">Fórmula de Divisão:</span>
+                  <span className="text-tropical-text-secondary">
                     R$ {expense.totalAmount.toFixed(2)} &divide; {expense.participantsCount} pessoas envolvidas
                   </span>
                 </div>
 
                 <div className="sm:text-right">
-                  <span className="font-semibold text-slate-700 block">Cota Individual:</span>
-                  <span className="text-base font-bold text-coastal-coral-dark font-display">
+                  <span className="font-bold text-tropical-text block">Cota Individual:</span>
+                  <span className="text-base font-extrabold text-tropical-coral font-display">
                     R$ {expense.assignedAmountPerPerson.toFixed(2)} / pessoa
                   </span>
                 </div>
               </div>
 
-              <div className="text-xs text-slate-500 flex flex-wrap items-center justify-between gap-2 pt-1">
+              <div className="text-xs text-tropical-text-muted flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-tropical-sand-border/30">
                 <span>
-                  <strong>Participantes na divisão:</strong> {expense.involvedParticipantNames.join(', ')}
+                  <strong>Participantes no rateio:</strong> {expense.involvedParticipantNames.join(', ')}
                 </span>
                 {expense.dueDate && (
-                  <span className="text-amber-800 font-medium flex items-center gap-1">
-                    <Calendar className="w-3.5 h-3.5" /> Vencimento previsto: {expense.dueDate}
+                  <span className="text-tropical-coral font-bold flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5" /> Vencimento: {expense.dueDate}
                   </span>
                 )}
               </div>
-            </Card>
+            </div>
           ))}
         </div>
       </div>
 
-    </div>
     </PageShell>
   );
 };

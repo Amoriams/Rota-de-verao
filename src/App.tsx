@@ -21,7 +21,7 @@ const AppLayout: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen flex bg-slate-50 text-slate-800">
+    <div className="min-h-screen flex bg-tropical-bg text-tropical-text">
       {/* Sidebar lateral fixa */}
       <Sidebar currentRole={role} />
 

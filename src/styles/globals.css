@@ -9,27 +9,67 @@
   }
   
   body {
-    @apply bg-coastal-offwhite text-slate-800 antialiased;
+    @apply bg-tropical-bg text-tropical-text antialiased;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    background-color: #FAF8F5;
+  }
+
+  /* Respeita preferências de redução de movimento */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
-/* Scrollbar sutil estilo Coastal */
+/* Scrollbar sutil estilo Tropical Contemporary */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #F5EFE3;
+  background: #F4E8D1;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #D5BE99;
+  background: #ADE2E5;
   border-radius: 9999px;
+  border: 2px solid #FAF8F5;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #164E63;
+  background: #087E83;
 }
 
+/* Efeitos utilitários para estética Tropical Editorial */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(244, 232, 209, 0.6);
+}
+
+.glass-panel-dark {
+  background: rgba(24, 60, 61, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.tropical-card {
+  @apply bg-white rounded-2xl border border-tropical-sand-border/40 shadow-tropical-sm transition-all duration-300;
+}
+
+.tropical-card:hover {
+  @apply shadow-tropical transform -translate-y-0.5 border-tropical-turquoise/40;
+}
+
+.badge-tropical {
+  @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold tracking-wide;
+}
