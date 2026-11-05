@@ -9,9 +9,10 @@
   }
   
   body {
-    @apply bg-tropical-bg text-tropical-text antialiased;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     background-color: #FAF8F5;
+    color: #183C3D;
+    @apply antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 
   /* Respeita preferências de redução de movimento */

@@ -74,6 +74,7 @@ export default {
             subtle: '#F4EFE6',
           },
         },
+        'tropical-bg': '#FAF8F5',
         // Mapeamento de retrocompatibilidade harmonizado com a nova paleta
         coastal: {
           ocean: {
