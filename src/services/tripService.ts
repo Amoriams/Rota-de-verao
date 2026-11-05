@@ -65,3 +65,4 @@ export const tripService = {
     if (error) throw error;
   },
 };
+

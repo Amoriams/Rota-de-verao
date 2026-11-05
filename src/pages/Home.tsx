@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Calendar,
@@ -15,32 +15,142 @@ import {
   Shield,
   Bell,
   ArrowRight,
+  AlertTriangle,
+  RotateCcw,
 } from 'lucide-react';
-import { MOCK_TRIP, MOCK_PARTICIPANTS, MOCK_FLIGHTS, MOCK_ACCOMMODATIONS, MOCK_VEHICLES, MOCK_POLLS } from '../data/mockData';
+import { isSupabaseConfigured } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import { tripService } from '../services/tripService';
+import { memberService } from '../services/memberService';
+import { flightService } from '../services/flightService';
+import { accommodationService } from '../services/accommodationService';
+import { vehicleService } from '../services/vehicleService';
+import { pollService } from '../services/pollService';
+import { Trip, TripMemberWithProfile, Flight, Accommodation, VehicleWithInterests, PollWithOptions } from '../@types/database.types';
 
 export const Home: React.FC = () => {
-  const confirmedCount = MOCK_PARTICIPANTS.filter(p => p.status === 'confirmed').length;
-  const totalCount = MOCK_PARTICIPANTS.length;
-  const confirmationPct = Math.round((confirmedCount / totalCount) * 100);
+  const { user } = useAuth();
 
-  // Voo mais barato de ida
-  const cheapestFlight = MOCK_FLIGHTS
-    .filter(f => f.type === 'ida')
-    .reduce((min, f) => f.price < min.price ? f : min);
+  const [trip, setTrip] = useState<Trip | null>(null);
+  const [members, setMembers] = useState<TripMemberWithProfile[]>([]);
+  const [flights, setFlights] = useState<Flight[]>([]);
+  const [accommodations, setAccommodations] = useState<Accommodation[]>([]);
+  const [vehicles, setVehicles] = useState<VehicleWithInterests[]>([]);
+  const [polls, setPolls] = useState<PollWithOptions[]>([]);
 
-  // Acomodação com menor preço por pessoa
-  const cheapestAccommodation = MOCK_ACCOMMODATIONS
-    .reduce((min, a) => a.pricePerPersonEstimated < min.pricePerPersonEstimated ? a : min);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isError, setIsError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    setIsError(false);
+    setErrorMessage(null);
+
+    try {
+      // 1. Busca dados da viagem
+      const tripData = await tripService.getTrip();
+      setTrip(tripData);
+
+      // 2. Busca membros, voos, acomodações, veículos e enquetes
+      const [membersData, flightsData, accsData, vehiclesData, pollsData] = await Promise.all([
+        memberService.getMembers(tripData.id),
+        flightService.getFlights(tripData.id),
+        accommodationService.getAccommodations(tripData.id),
+        vehicleService.getVehicles(tripData.id),
+        pollService.getPolls(tripData.id),
+      ]);
+
+      setMembers(membersData);
+      setFlights(flightsData);
+      setAccommodations(accsData);
+      setVehicles(vehiclesData);
+      setPolls(pollsData);
+    } catch (err: unknown) {
+      console.error('Falha ao carregar dados da página inicial:', err);
+      // Se o Supabase estiver configurado e falhar, NUNCA exibe mocks como se fossem reais
+      if (isSupabaseConfigured) {
+        setIsError(true);
+        setErrorMessage(
+          err instanceof Error
+            ? err.message
+            : 'Não foi possível conectar ao banco de dados da viagem. Verifique sua conexão ou tente novamente.'
+        );
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Se o Supabase estiver configurado e ainda estiver buscando dados
+  if (isLoading && isSupabaseConfigured) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 text-cyan-600 flex items-center justify-center animate-pulse mb-3">
+          <Users className="w-6 h-6" />
+        </div>
+        <p className="font-display font-medium text-sm text-slate-600">
+          Carregando informações da viagem... 🌊
+        </p>
+      </div>
+    );
+  }
+
+  // Se houver erro de conexão com o banco real configurado
+  if (isError && isSupabaseConfigured) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4 border border-rose-100 shadow-sm">
+          <AlertTriangle className="w-8 h-8" />
+        </div>
+        <h2 className="font-display font-bold text-xl text-slate-800 mb-2">
+          Falha na conexão com o banco de dados
+        </h2>
+        <p className="text-slate-600 text-sm max-w-md mb-6 leading-relaxed">
+          {errorMessage}
+        </p>
+        <button
+          onClick={loadData}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-600 text-white font-semibold text-sm transition-all shadow-md cursor-pointer"
+        >
+          <RotateCcw className="w-4 h-4" /> Tentar novamente
+        </button>
+      </div>
+    );
+  }
+
+  // Cálculos baseados nos dados carregados
+  const confirmedCount = members.filter(p => p.confirmation_status === 'confirmed').length;
+  const totalCount = members.length;
+  const confirmationPct = totalCount > 0 ? Math.round((confirmedCount / totalCount) * 100) : 0;
+
+  // Voo mais barato
+  const cheapestFlight = flights.length > 0
+    ? flights.filter(f => f.type === 'ida').reduce((min, f) => (f.price < min.price ? f : min), flights[0])
+    : null;
+
+  // Acomodação mais barata por pessoa
+  const cheapestAccommodation = accommodations.length > 0
+    ? accommodations.reduce(
+        (min, a) => ((a.price_per_person_estimated ?? a.total_amount) < (min.price_per_person_estimated ?? min.total_amount) ? a : min),
+        accommodations[0]
+      )
+    : null;
 
   // Veículo mais barato por dia
-  const cheapestVehicle = MOCK_VEHICLES
-    .reduce((min, v) => v.dailyRate < min.dailyRate ? v : min);
+  const cheapestVehicle = vehicles.length > 0
+    ? vehicles.reduce((min, v) => (v.daily_rate < min.daily_rate ? v : min), vehicles[0])
+    : null;
 
   // Primeira enquete aberta
-  const openPoll = MOCK_POLLS.find(p => !p.isClosed);
+  const openPoll = polls.find(p => !p.is_closed);
 
-  // Avatares para "Nossa Turma" (apenas confirmados)
-  const confirmedParticipants = MOCK_PARTICIPANTS.filter(p => p.status === 'confirmed');
+  // Participantes confirmados para avatares
+  const confirmedParticipants = members.filter(p => p.confirmation_status === 'confirmed');
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50">
@@ -49,7 +159,7 @@ export const Home: React.FC = () => {
       <section className="relative w-full overflow-hidden" style={{ minHeight: '300px' }}>
         {/* Imagem panorâmica de praia */}
         <img
-          src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1920&q=80"
+          src={trip?.cover_image_url || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1920&q=80"}
           alt="Praia paradisíaca"
           className="w-full object-cover object-center"
           style={{ height: '340px' }}
@@ -62,10 +172,12 @@ export const Home: React.FC = () => {
         <div className="absolute top-4 right-5 flex items-center gap-2 bg-white/20 backdrop-blur-md rounded-full px-3 py-1.5 border border-white/30">
           <img
             src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=60&q=80"
-            alt="Julia"
+            alt="Usuário"
             className="w-7 h-7 rounded-full object-cover border-2 border-white"
           />
-          <span className="text-white text-sm font-medium">Olá, Julia!</span>
+          <span className="text-white text-sm font-medium">
+            {user?.email ? user.email.split('@')[0] : 'Olá, Julia!'}
+          </span>
           <svg className="w-3 h-3 text-white/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
@@ -74,7 +186,7 @@ export const Home: React.FC = () => {
         {/* Título e pills de informação */}
         <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-4 pb-6">
           <h1 className="font-display font-extrabold text-4xl md:text-5xl text-white drop-shadow-lg tracking-tight mb-1">
-            Rota de Verão
+            {trip?.title || 'Rota de Verão'}
           </h1>
           <p className="text-white/90 text-base md:text-lg mb-6 drop-shadow">
             Planejando juntos uma viagem inesquecível! 🌊
@@ -84,11 +196,11 @@ export const Home: React.FC = () => {
           <div className="flex flex-wrap justify-center gap-3">
             <div className="flex items-center gap-2 bg-white/20 backdrop-blur-md rounded-full px-4 py-2 border border-white/30 text-white text-sm font-medium">
               <MapPin className="w-4 h-4 text-cyan-300 shrink-0" />
-              {MOCK_TRIP.destination} — {MOCK_TRIP.state}
+              {trip?.destination} {trip?.state ? `— ${trip.state}` : ''}
             </div>
             <div className="flex items-center gap-2 bg-white/20 backdrop-blur-md rounded-full px-4 py-2 border border-white/30 text-white text-sm font-medium">
               <Calendar className="w-4 h-4 text-cyan-300 shrink-0" />
-              {MOCK_TRIP.startDate} a {MOCK_TRIP.endDate}
+              {trip?.start_date} a {trip?.end_date}
             </div>
             <div className="flex items-center gap-2 bg-white/20 backdrop-blur-md rounded-full px-4 py-2 border border-white/30 text-white text-sm font-medium">
               <Users className="w-4 h-4 text-cyan-300 shrink-0" />
@@ -122,7 +234,7 @@ export const Home: React.FC = () => {
               <p className="text-xs text-slate-500 mb-0.5">Acompanhe os melhores preços</p>
               <div className="flex items-end gap-1 mb-0.5">
                 <span className="text-2xl font-bold font-display text-slate-800">
-                  R$ {cheapestFlight.price.toLocaleString('pt-BR')}
+                  {cheapestFlight ? `R$ ${cheapestFlight.price.toLocaleString('pt-BR')}` : 'A definir'}
                 </span>
               </div>
               <div className="flex items-center gap-1 mb-3">
@@ -158,7 +270,9 @@ export const Home: React.FC = () => {
               <p className="text-xs text-slate-500 mb-0.5">Conforto para nosso grupo</p>
               <div className="flex items-end gap-1 mb-0.5">
                 <span className="text-2xl font-bold font-display text-slate-800">
-                  R$ {cheapestAccommodation.pricePerPersonEstimated.toLocaleString('pt-BR')}
+                  {cheapestAccommodation
+                    ? `R$ ${(cheapestAccommodation.price_per_person_estimated ?? cheapestAccommodation.total_amount).toLocaleString('pt-BR')}`
+                    : 'A definir'}
                 </span>
               </div>
               <div className="flex items-center gap-1 mb-3">
@@ -194,7 +308,7 @@ export const Home: React.FC = () => {
               <p className="text-xs text-slate-500 mb-0.5">Liberdade para explorar</p>
               <div className="flex items-end gap-1 mb-0.5">
                 <span className="text-2xl font-bold font-display text-slate-800">
-                  R$ {cheapestVehicle.dailyRate.toLocaleString('pt-BR')}
+                  {cheapestVehicle ? `R$ ${cheapestVehicle.daily_rate.toLocaleString('pt-BR')}` : 'A definir'}
                 </span>
               </div>
               <div className="flex items-center gap-1 mb-3">
@@ -255,9 +369,9 @@ export const Home: React.FC = () => {
                   {confirmedParticipants.slice(0, 5).map(p => (
                     <img
                       key={p.id}
-                      src={p.avatarUrl}
-                      alt={p.nickname}
-                      title={p.name}
+                      src={p.profile.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80'}
+                      alt={p.profile.nickname || p.profile.full_name}
+                      title={p.profile.full_name}
                       className="w-9 h-9 rounded-full border-2 border-white object-cover"
                     />
                   ))}
@@ -271,7 +385,7 @@ export const Home: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-1 text-xs text-slate-500">
                   <Clock className="w-3.5 h-3.5 text-amber-400" />
-                  {MOCK_PARTICIPANTS.filter(p => p.status === 'pending').length} aguardando confirmação
+                  {members.filter(p => p.confirmation_status === 'pending').length} aguardando confirmação
                 </div>
               </div>
 
@@ -290,7 +404,6 @@ export const Home: React.FC = () => {
               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    {/* Ícone de barras de votação */}
                     <svg className="w-5 h-5 text-cyan-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                         d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -344,8 +457,8 @@ export const Home: React.FC = () => {
               {/* Foto do destino */}
               <div className="relative h-44 overflow-hidden">
                 <img
-                  src={MOCK_TRIP.coverImageUrl}
-                  alt={MOCK_TRIP.destination}
+                  src={trip?.cover_image_url || "https://images.unsplash.com/photo-1544644181-1484b3fdfc62?auto=format&fit=crop&w=1920&q=80"}
+                  alt={trip?.destination}
                   className="w-full h-full object-cover"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
@@ -362,17 +475,17 @@ export const Home: React.FC = () => {
               {/* Informações */}
               <div className="p-4 flex flex-col flex-1">
                 <h3 className="font-display font-bold text-sm text-slate-800 mb-3">
-                  {MOCK_TRIP.destination} — {MOCK_TRIP.state}
+                  {trip?.destination} {trip?.state ? `— ${trip.state}` : ''}
                 </h3>
 
                 <div className="space-y-2 flex-1">
                   <div className="flex items-center gap-2 text-xs text-slate-600">
                     <Calendar className="w-3.5 h-3.5 text-cyan-500 shrink-0" />
-                    <span>{MOCK_TRIP.startDate} a {MOCK_TRIP.endDate}</span>
+                    <span>{trip?.start_date} a {trip?.end_date}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-slate-600">
                     <MapPin className="w-3.5 h-3.5 text-cyan-500 shrink-0" />
-                    <span>Fortaleza, CE</span>
+                    <span>{trip?.destination}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-slate-600">
                     <Users className="w-3.5 h-3.5 text-cyan-500 shrink-0" />
@@ -397,7 +510,6 @@ export const Home: React.FC = () => {
       <footer className="mx-4 md:mx-6 lg:mx-8 mb-6 mt-1">
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 px-5 py-4">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-            {/* 3 diferenciais */}
             <div className="flex flex-wrap justify-center md:justify-start gap-6">
               <div className="flex items-center gap-2 text-slate-600">
                 <div className="w-8 h-8 rounded-lg bg-cyan-50 flex items-center justify-center">
@@ -428,7 +540,6 @@ export const Home: React.FC = () => {
               </div>
             </div>
 
-            {/* Frase de encerramento */}
             <p className="font-display italic text-sm text-cyan-500 font-semibold whitespace-nowrap">
               Vamos viver esse verão juntos! 🌊
             </p>

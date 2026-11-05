@@ -112,6 +112,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (error) throw error;
+      if (data?.hashed_token) {
+        const { error: otpErr } = await supabase.auth.verifyOtp({
+          token_hash: data.hashed_token,
+          type: 'magiclink',
+        });
+        if (otpErr) throw otpErr;
+        return { error: null };
+      }
       if (data?.session) {
         await supabase.auth.setSession(data.session);
         return { error: null };
@@ -168,3 +176,4 @@ export const useAuth = () => {
   }
   return context;
 };
+

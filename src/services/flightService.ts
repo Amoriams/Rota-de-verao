@@ -38,3 +38,4 @@ export const flightService = {
     return data || [];
   },
 };
+
