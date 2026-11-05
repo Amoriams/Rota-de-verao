@@ -15,6 +15,7 @@ import { MOCK_TRIP, MOCK_PARTICIPANTS, MOCK_ACTIVITY_LOGS } from '../data/mockDa
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
+import { PageShell } from '../components/layout/PageShell';
 
 export const Admin: React.FC = () => {
   const [copiedTokenId, setCopiedTokenId] = useState<string | null>(null);
@@ -30,6 +31,7 @@ export const Admin: React.FC = () => {
   };
 
   return (
+    <PageShell>
     <div className="space-y-8">
       
       {/* Cabeçalho */}
@@ -215,5 +217,6 @@ export const Admin: React.FC = () => {
       </section>
 
     </div>
+    </PageShell>
   );
 };

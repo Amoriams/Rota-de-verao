@@ -10,6 +10,7 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Poll } from '../types';
+import { PageShell } from '../components/layout/PageShell';
 
 interface PollsProps {
   currentRole: 'admin' | 'member';
@@ -51,6 +52,7 @@ export const Polls: React.FC<PollsProps> = ({ currentRole }) => {
   };
 
   return (
+    <PageShell>
     <div className="space-y-8">
       
       {/* Cabeçalho */}
@@ -187,5 +189,6 @@ export const Polls: React.FC<PollsProps> = ({ currentRole }) => {
       </div>
 
     </div>
+    </PageShell>
   );
 };

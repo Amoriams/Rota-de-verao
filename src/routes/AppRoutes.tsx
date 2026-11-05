@@ -30,3 +30,4 @@ export const AppRoutes: React.FC<AppRoutesProps> = ({ currentRole }) => {
     </Routes>
   );
 };
+

@@ -12,6 +12,7 @@ import { MOCK_PARTICIPANTS, MOCK_COUPLES } from '../data/mockData';
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Participant, Couple } from '../types';
+import { PageShell } from '../components/layout/PageShell';
 
 export const Participants: React.FC = () => {
   const [viewMode, setViewMode] = useState<'individual' | 'couples'>('couples');
@@ -67,6 +68,7 @@ export const Participants: React.FC = () => {
   const declinedTotal = participantsList.filter(p => p.status === 'declined').length;
 
   return (
+    <PageShell>
     <div className="space-y-8">
       
       {/* Cabeçalho da Página */}
@@ -334,5 +336,6 @@ export const Participants: React.FC = () => {
       )}
 
     </div>
+    </PageShell>
   );
 };

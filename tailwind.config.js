@@ -40,6 +40,12 @@ export default {
             light: '#F8BEA7',
             dark: '#D8714B',
           },
+          // Cor primária turquesa — botões, links ativos e destaques
+          teal: {
+            DEFAULT: '#06B6D4',
+            light: '#67E8F9',
+            dark: '#0891B2',
+          },
         },
       },
       fontFamily: {
@@ -54,3 +60,4 @@ export default {
   },
   plugins: [],
 }
+

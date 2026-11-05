@@ -465,3 +465,4 @@ export const MOCK_ACTIVITY_LOGS: ActivityLog[] = [
     timestamp: 'Hoje às 10:15',
   },
 ];
+

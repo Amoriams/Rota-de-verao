@@ -11,6 +11,7 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Vehicle } from '../types';
+import { PageShell } from '../components/layout/PageShell';
 
 export const Vehicles: React.FC = () => {
   const [vehiclesList, setVehiclesList] = useState<Vehicle[]>(MOCK_VEHICLES);
@@ -29,6 +30,7 @@ export const Vehicles: React.FC = () => {
   };
 
   return (
+    <PageShell>
     <div className="space-y-8">
       
       {/* Cabeçalho */}
@@ -212,5 +214,6 @@ export const Vehicles: React.FC = () => {
       </div>
 
     </div>
+    </PageShell>
   );
 };

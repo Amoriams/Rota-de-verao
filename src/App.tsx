@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { DisclaimerBanner } from './components/common/DisclaimerBanner';
-import { Navbar } from './components/layout/Navbar';
-import { Footer } from './components/layout/Footer';
+import { Sidebar } from './components/layout/Sidebar';
 import { AppRoutes } from './routes/AppRoutes';
 
 export const App: React.FC = () => {
@@ -14,28 +13,32 @@ export const App: React.FC = () => {
 
   return (
     <BrowserRouter>
-      <div className="min-h-screen flex flex-col bg-coastal-offwhite text-slate-800">
-        
-        {/* Banner Informativo do Marco 2 e Alternador de Perfil */}
-        <DisclaimerBanner 
-          currentRole={currentRole} 
-          onToggleRole={handleToggleRole} 
-        />
+      {/* Layout raiz: sidebar fixa à esquerda + conteúdo à direita */}
+      <div className="min-h-screen flex bg-slate-50 text-slate-800">
 
-        {/* Barra de Navegação Superior */}
-        <Navbar currentRole={currentRole} />
+        {/* Sidebar lateral fixa */}
+        <Sidebar currentRole={currentRole} />
 
-        {/* Área de Conteúdo Central */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12 flex-1 w-full">
-          <AppRoutes currentRole={currentRole} />
-        </main>
+        {/* Área de conteúdo principal — deslocada à direita da sidebar no desktop */}
+        <div className="flex-1 flex flex-col lg:ml-64 min-w-0">
 
-        {/* Rodapé da Aplicação */}
-        <Footer />
+          {/* Banner informativo do Marco 2 e alternador de perfil */}
+          <DisclaimerBanner
+            currentRole={currentRole}
+            onToggleRole={handleToggleRole}
+          />
 
+          {/* Conteúdo das páginas */}
+          <main className="flex-1">
+            <AppRoutes currentRole={currentRole} />
+          </main>
+
+        </div>
       </div>
     </BrowserRouter>
   );
 };
 
 export default App;
+
+

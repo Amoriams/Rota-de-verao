@@ -51,3 +51,4 @@ export const DisclaimerBanner: React.FC<DisclaimerBannerProps> = ({
     </aside>
   );
 };
+

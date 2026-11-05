@@ -1,201 +1,440 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { 
-  Calendar, 
-  MapPin, 
-  Users, 
-  ArrowRight, 
-  Vote, 
-  Receipt 
+import {
+  Calendar,
+  MapPin,
+  Users,
+  CheckCircle2,
+  Clock,
+  Plane,
+  Building2,
+  Car,
+  Star,
+  ChevronRight,
+  TrendingUp,
+  Shield,
+  Bell,
+  ArrowRight,
 } from 'lucide-react';
-import { MOCK_TRIP, MOCK_PARTICIPANTS } from '../data/mockData';
-import { Button } from '../components/common/Button';
-import { Card } from '../components/common/Card';
-import { Badge } from '../components/common/Badge';
+import { MOCK_TRIP, MOCK_PARTICIPANTS, MOCK_FLIGHTS, MOCK_ACCOMMODATIONS, MOCK_VEHICLES, MOCK_POLLS } from '../data/mockData';
 
 export const Home: React.FC = () => {
   const confirmedCount = MOCK_PARTICIPANTS.filter(p => p.status === 'confirmed').length;
+  const totalCount = MOCK_PARTICIPANTS.length;
+  const confirmationPct = Math.round((confirmedCount / totalCount) * 100);
+
+  // Voo mais barato de ida
+  const cheapestFlight = MOCK_FLIGHTS
+    .filter(f => f.type === 'ida')
+    .reduce((min, f) => f.price < min.price ? f : min);
+
+  // Acomodação com menor preço por pessoa
+  const cheapestAccommodation = MOCK_ACCOMMODATIONS
+    .reduce((min, a) => a.pricePerPersonEstimated < min.pricePerPersonEstimated ? a : min);
+
+  // Veículo mais barato por dia
+  const cheapestVehicle = MOCK_VEHICLES
+    .reduce((min, v) => v.dailyRate < min.dailyRate ? v : min);
+
+  // Primeira enquete aberta
+  const openPoll = MOCK_POLLS.find(p => !p.isClosed);
+
+  // Avatares para "Nossa Turma" (apenas confirmados)
+  const confirmedParticipants = MOCK_PARTICIPANTS.filter(p => p.status === 'confirmed');
 
   return (
-    <div className="space-y-12 md:space-y-16">
-      
-      {/* Hero Section com Imagem Impactante */}
-      <section className="relative rounded-3xl overflow-hidden shadow-coastal border border-coastal-sand/60">
-        <div className="absolute inset-0 bg-gradient-to-t from-coastal-ocean-900/90 via-coastal-ocean-800/40 to-black/20 z-10" />
+    <div className="flex flex-col min-h-screen bg-slate-50">
+
+      {/* ── BLOCO A — Hero com foto de praia ───────────────────────────────── */}
+      <section className="relative w-full overflow-hidden" style={{ minHeight: '300px' }}>
+        {/* Imagem panorâmica de praia */}
         <img
-          src={MOCK_TRIP.coverImageUrl}
-          alt={MOCK_TRIP.title}
-          className="w-full h-[420px] md:h-[500px] object-cover object-center"
+          src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1920&q=80"
+          alt="Praia paradisíaca"
+          className="w-full object-cover object-center"
+          style={{ height: '340px' }}
         />
 
-        <div className="absolute inset-0 z-20 flex flex-col justify-end p-6 md:p-12 text-white">
-          <div className="max-w-3xl space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="water" size="md" className="font-semibold shadow-sm">
-                Viagem Confirmada 🏖️
-              </Badge>
-              <span className="text-coastal-sand-light text-xs md:text-sm font-medium flex items-center gap-1">
-                <Calendar className="w-4 h-4 text-coastal-water" /> {MOCK_TRIP.startDate} até {MOCK_TRIP.endDate}
-              </span>
-            </div>
+        {/* Overlay gradiente para legibilidade */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/20 to-black/60" />
 
-            <h1 className="font-display font-extrabold text-3xl sm:text-4xl md:text-5xl text-white tracking-tight leading-tight">
-              {MOCK_TRIP.title}
-            </h1>
-
-            <div className="flex items-center gap-2 text-coastal-water-light text-lg md:text-xl font-medium">
-              <MapPin className="w-5 h-5 text-coastal-coral shrink-0" />
-              <span>{MOCK_TRIP.destination} &bull; {MOCK_TRIP.state}</span>
-            </div>
-
-            <p className="text-coastal-sand-light/90 text-sm md:text-base leading-relaxed max-w-2xl">
-              {MOCK_TRIP.description}
-            </p>
-
-            <div className="pt-2 flex flex-wrap items-center gap-3">
-              <Link to="/dashboard">
-                <Button size="lg" variant="coral" icon={<ArrowRight className="w-5 h-5" />} iconPosition="right">
-                  Acessar Dashboard
-                </Button>
-              </Link>
-              <Link to="/participantes">
-                <Button size="lg" variant="outline" className="bg-white/10 hover:bg-white/20 text-white border-white/30 backdrop-blur-sm">
-                  Ver Participantes ({confirmedCount} Confirmados)
-                </Button>
-              </Link>
-            </div>
-          </div>
+        {/* Avatar do usuário — canto superior direito */}
+        <div className="absolute top-4 right-5 flex items-center gap-2 bg-white/20 backdrop-blur-md rounded-full px-3 py-1.5 border border-white/30">
+          <img
+            src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=60&q=80"
+            alt="Julia"
+            className="w-7 h-7 rounded-full object-cover border-2 border-white"
+          />
+          <span className="text-white text-sm font-medium">Olá, Julia!</span>
+          <svg className="w-3 h-3 text-white/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
         </div>
-      </section>
 
-      {/* Destaques Rápidos da Viagem */}
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
-        <Card padding="md" className="border-t-4 border-t-coastal-ocean">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-coastal-ocean-50 text-coastal-ocean flex items-center justify-center">
-              <Users className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-coastal-ocean font-display">
-                {confirmedCount} <span className="text-sm font-normal text-slate-500">/ {MOCK_PARTICIPANTS.length}</span>
-              </div>
-              <div className="text-xs text-slate-600 font-medium">Presenças Confirmadas</div>
-            </div>
-          </div>
-        </Card>
-
-        <Card padding="md" className="border-t-4 border-t-coastal-coral">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-orange-50 text-coastal-coral flex items-center justify-center">
-              <Calendar className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-coastal-ocean font-display">
-                7 <span className="text-sm font-normal text-slate-500">dias</span>
-              </div>
-              <div className="text-xs text-slate-600 font-medium">De Praia e Descanso</div>
-            </div>
-          </div>
-        </Card>
-
-        <Card padding="md" className="border-t-4 border-t-coastal-water">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-cyan-50 text-coastal-water-dark flex items-center justify-center">
-              <Vote className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-coastal-ocean font-display">
-                2 <span className="text-sm font-normal text-slate-500">abertas</span>
-              </div>
-              <div className="text-xs text-slate-600 font-medium">Votações Ativas</div>
-            </div>
-          </div>
-        </Card>
-
-        <Card padding="md" className="border-t-4 border-t-coastal-sand-dark">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-coastal-sand-light text-coastal-sand-dark flex items-center justify-center">
-              <Receipt className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-coastal-ocean font-display">
-                R$ 2.850
-              </div>
-              <div className="text-xs text-slate-600 font-medium">Estimativa Média / Pessoa</div>
-            </div>
-          </div>
-        </Card>
-      </section>
-
-      {/* Por que o Rota de Verão? Diferenciais da Plataforma */}
-      <section className="bg-white rounded-3xl p-6 md:p-10 border border-coastal-sand/60 shadow-coastal">
-        <div className="max-w-2xl mb-8">
-          <Badge variant="ocean" size="sm" className="mb-2">
-            Organização sem Estresse
-          </Badge>
-          <h2 className="font-display font-bold text-2xl md:text-3xl text-coastal-ocean">
-            Como funciona a nossa viagem?
-          </h2>
-          <p className="text-slate-600 text-sm md:text-base mt-2">
-            Chega de mensagens perdidas no WhatsApp, enquetes confusas e dúvidas sobre quanto cada um deve pagar.
+        {/* Título e pills de informação */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-4 pb-6">
+          <h1 className="font-display font-extrabold text-4xl md:text-5xl text-white drop-shadow-lg tracking-tight mb-1">
+            Rota de Verão
+          </h1>
+          <p className="text-white/90 text-base md:text-lg mb-6 drop-shadow">
+            Planejando juntos uma viagem inesquecível! 🌊
           </p>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="p-5 rounded-2xl bg-coastal-offwhite border border-coastal-sand/50 space-y-3">
-            <div className="w-10 h-10 rounded-xl bg-coastal-water-light text-coastal-ocean flex items-center justify-center">
-              <Users className="w-5 h-5" />
+          {/* Pills de informação */}
+          <div className="flex flex-wrap justify-center gap-3">
+            <div className="flex items-center gap-2 bg-white/20 backdrop-blur-md rounded-full px-4 py-2 border border-white/30 text-white text-sm font-medium">
+              <MapPin className="w-4 h-4 text-cyan-300 shrink-0" />
+              {MOCK_TRIP.destination} — {MOCK_TRIP.state}
             </div>
-            <h3 className="font-display font-semibold text-lg text-coastal-ocean">
-              Visão Especial de Casais
-            </h3>
-            <p className="text-slate-600 text-xs md:text-sm leading-relaxed">
-              Cada pessoa confirma sua própria presença, mas a organizadora e os amigos acompanham facilmente o status conjunto de cada casal.
-            </p>
-          </div>
-
-          <div className="p-5 rounded-2xl bg-coastal-offwhite border border-coastal-sand/50 space-y-3">
-            <div className="w-10 h-10 rounded-xl bg-orange-100 text-coastal-coral-dark flex items-center justify-center">
-              <Vote className="w-5 h-5" />
+            <div className="flex items-center gap-2 bg-white/20 backdrop-blur-md rounded-full px-4 py-2 border border-white/30 text-white text-sm font-medium">
+              <Calendar className="w-4 h-4 text-cyan-300 shrink-0" />
+              {MOCK_TRIP.startDate} a {MOCK_TRIP.endDate}
             </div>
-            <h3 className="font-display font-semibold text-lg text-coastal-ocean">
-              Decisões Democráticas
-            </h3>
-            <p className="text-slate-600 text-xs md:text-sm leading-relaxed">
-              Votações oficiais para escolha da melhor casa, passeios e restaurantes com apuração transparente em tempo real.
-            </p>
-          </div>
-
-          <div className="p-5 rounded-2xl bg-coastal-offwhite border border-coastal-sand/50 space-y-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center">
-              <Receipt className="w-5 h-5" />
+            <div className="flex items-center gap-2 bg-white/20 backdrop-blur-md rounded-full px-4 py-2 border border-white/30 text-white text-sm font-medium">
+              <Users className="w-4 h-4 text-cyan-300 shrink-0" />
+              {totalCount} pessoas no grupo
             </div>
-            <h3 className="font-display font-semibold text-lg text-coastal-ocean">
-              Divisão de Custos Justa
-            </h3>
-            <p className="text-slate-600 text-xs md:text-sm leading-relaxed">
-              Carros são divididos apenas entre quem vai andar no carro. Despesas coletivas incluem apenas quem confirmou presença. Sem surpresas na volta!
-            </p>
           </div>
         </div>
       </section>
 
-      {/* Chamada para o Convidado */}
-      <section className="bg-gradient-to-r from-coastal-ocean via-coastal-ocean-600 to-coastal-ocean-700 rounded-3xl p-8 md:p-12 text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-coastal">
-        <div className="space-y-2 text-center md:text-left">
-          <h3 className="font-display font-bold text-2xl md:text-3xl text-white">
-            Você é um dos convidados da viagem?
-          </h3>
-          <p className="text-coastal-sand-light text-sm md:text-base max-w-xl">
-            Acesse o painel para conferir as opções de casas, voos recomendados e registrar seus votos para definirmos a programação.
-          </p>
+      {/* ── BLOCO B — Cards de serviço (Passagens, Hospedagem, Carros) ──────── */}
+      <section className="px-4 md:px-6 lg:px-8 -mt-5 relative z-10">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+          {/* Card Passagens */}
+          <div className="bg-white rounded-2xl shadow-md overflow-hidden border border-slate-100 hover:shadow-lg transition-shadow">
+            <div className="relative h-32 overflow-hidden">
+              <img
+                src="https://images.unsplash.com/photo-1436491865332-7a61a109cc05?auto=format&fit=crop&w=600&q=80"
+                alt="Avião"
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+              <div className="absolute bottom-2 left-3 flex items-center gap-1.5">
+                <div className="w-6 h-6 rounded-full bg-cyan-500 flex items-center justify-center">
+                  <Plane className="w-3 h-3 text-white" />
+                </div>
+                <span className="text-white text-xs font-semibold">Passagens Aéreas</span>
+              </div>
+            </div>
+            <div className="p-4">
+              <p className="text-xs text-slate-500 mb-0.5">Acompanhe os melhores preços</p>
+              <div className="flex items-end gap-1 mb-0.5">
+                <span className="text-2xl font-bold font-display text-slate-800">
+                  R$ {cheapestFlight.price.toLocaleString('pt-BR')}
+                </span>
+              </div>
+              <div className="flex items-center gap-1 mb-3">
+                <TrendingUp className="w-3 h-3 text-green-500" />
+                <span className="text-xs text-green-600 font-medium">a partir de</span>
+              </div>
+              <Link
+                to="/passagens"
+                className="flex items-center justify-center gap-1 w-full py-2 rounded-xl bg-cyan-500 hover:bg-cyan-600 text-white text-sm font-semibold transition-colors"
+              >
+                Ver detalhes <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          </div>
+
+          {/* Card Hospedagem */}
+          <div className="bg-white rounded-2xl shadow-md overflow-hidden border border-slate-100 hover:shadow-lg transition-shadow">
+            <div className="relative h-32 overflow-hidden">
+              <img
+                src="https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=600&q=80"
+                alt="Casa de praia"
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+              <div className="absolute bottom-2 left-3 flex items-center gap-1.5">
+                <div className="w-6 h-6 rounded-full bg-cyan-500 flex items-center justify-center">
+                  <Building2 className="w-3 h-3 text-white" />
+                </div>
+                <span className="text-white text-xs font-semibold">Hospedagem</span>
+              </div>
+            </div>
+            <div className="p-4">
+              <p className="text-xs text-slate-500 mb-0.5">Conforto para nosso grupo</p>
+              <div className="flex items-end gap-1 mb-0.5">
+                <span className="text-2xl font-bold font-display text-slate-800">
+                  R$ {cheapestAccommodation.pricePerPersonEstimated.toLocaleString('pt-BR')}
+                </span>
+              </div>
+              <div className="flex items-center gap-1 mb-3">
+                <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
+                <span className="text-xs text-slate-600 font-medium">4.8 · por pessoa</span>
+              </div>
+              <Link
+                to="/hospedagem"
+                className="flex items-center justify-center gap-1 w-full py-2 rounded-xl bg-cyan-500 hover:bg-cyan-600 text-white text-sm font-semibold transition-colors"
+              >
+                Ver opções <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          </div>
+
+          {/* Card Carros */}
+          <div className="bg-white rounded-2xl shadow-md overflow-hidden border border-slate-100 hover:shadow-lg transition-shadow">
+            <div className="relative h-32 overflow-hidden">
+              <img
+                src="https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=600&q=80"
+                alt="SUV"
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+              <div className="absolute bottom-2 left-3 flex items-center gap-1.5">
+                <div className="w-6 h-6 rounded-full bg-cyan-500 flex items-center justify-center">
+                  <Car className="w-3 h-3 text-white" />
+                </div>
+                <span className="text-white text-xs font-semibold">Carros para Alugar</span>
+              </div>
+            </div>
+            <div className="p-4">
+              <p className="text-xs text-slate-500 mb-0.5">Liberdade para explorar</p>
+              <div className="flex items-end gap-1 mb-0.5">
+                <span className="text-2xl font-bold font-display text-slate-800">
+                  R$ {cheapestVehicle.dailyRate.toLocaleString('pt-BR')}
+                </span>
+              </div>
+              <div className="flex items-center gap-1 mb-3">
+                <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
+                <span className="text-xs text-slate-600 font-medium">4.7 · por dia</span>
+              </div>
+              <Link
+                to="/veiculos"
+                className="flex items-center justify-center gap-1 w-full py-2 rounded-xl bg-cyan-500 hover:bg-cyan-600 text-white text-sm font-semibold transition-colors"
+              >
+                Ver opções <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          </div>
         </div>
-        <Link to="/dashboard" className="shrink-0">
-          <Button size="lg" variant="coral">
-            Abrir Painel da Viagem
-          </Button>
-        </Link>
       </section>
+
+      {/* ── BLOCOS C + D + E ─────────────────────────────────────────────────── */}
+      <section className="px-4 md:px-6 lg:px-8 py-5">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+          {/* Coluna esquerda: Nossa Turma (C) + Votações (D) */}
+          <div className="lg:col-span-2 space-y-4">
+
+            {/* ── Bloco C — Nossa Turma ────────────────────────────────────── */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-cyan-500" />
+                  <h2 className="font-display font-bold text-base text-slate-800">Nossa Turma</h2>
+                </div>
+                <Link
+                  to="/participantes"
+                  className="text-xs text-cyan-600 hover:text-cyan-700 font-medium flex items-center gap-0.5"
+                >
+                  Ver todos <ChevronRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+
+              {/* Contador */}
+              <div className="flex items-baseline gap-1 mb-1">
+                <span className="text-4xl font-bold font-display text-slate-800">{confirmedCount}</span>
+                <span className="text-slate-500 text-sm">de {totalCount} pessoas confirmaram presença</span>
+              </div>
+
+              {/* Barra de progresso */}
+              <div className="w-full bg-slate-100 rounded-full h-2 mb-3">
+                <div
+                  className="bg-cyan-500 h-2 rounded-full transition-all duration-500"
+                  style={{ width: `${confirmationPct}%` }}
+                />
+              </div>
+              <p className="text-xs text-slate-500 mb-4">{confirmationPct}%</p>
+
+              {/* Avatares */}
+              <div className="flex items-center gap-2 mb-4">
+                <div className="flex -space-x-2">
+                  {confirmedParticipants.slice(0, 5).map(p => (
+                    <img
+                      key={p.id}
+                      src={p.avatarUrl}
+                      alt={p.nickname}
+                      title={p.name}
+                      className="w-9 h-9 rounded-full border-2 border-white object-cover"
+                    />
+                  ))}
+                  {confirmedParticipants.length > 5 && (
+                    <div className="w-9 h-9 rounded-full border-2 border-white bg-cyan-100 flex items-center justify-center">
+                      <span className="text-xs font-semibold text-cyan-700">
+                        +{confirmedParticipants.length - 5}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 text-xs text-slate-500">
+                  <Clock className="w-3.5 h-3.5 text-amber-400" />
+                  {MOCK_PARTICIPANTS.filter(p => p.status === 'pending').length} aguardando confirmação
+                </div>
+              </div>
+
+              {/* Botão confirmar presença */}
+              <Link
+                to="/participantes"
+                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-600 text-white text-sm font-semibold transition-colors"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                Confirmar minha presença
+              </Link>
+            </div>
+
+            {/* ── Bloco D — Votações em Aberto ──────────────────────────────── */}
+            {openPoll && (
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    {/* Ícone de barras de votação */}
+                    <svg className="w-5 h-5 text-cyan-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                    <h2 className="font-display font-bold text-base text-slate-800">Votações em Aberto</h2>
+                  </div>
+                  <Link
+                    to="/enquetes"
+                    className="text-xs text-cyan-600 hover:text-cyan-700 font-medium flex items-center gap-0.5"
+                  >
+                    Ver todas <ChevronRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
+
+                <p className="text-sm font-semibold text-slate-700 mb-1">{openPoll.title}</p>
+                <p className="text-xs text-slate-500 mb-4">Vote na sua opção:</p>
+
+                {/* Opções com barra de progresso */}
+                <div className="space-y-3 mb-4">
+                  {openPoll.options.slice(0, 3).map(opt => (
+                    <div key={opt.id}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium text-slate-700 truncate max-w-[75%]">
+                          {opt.title}
+                        </span>
+                        <span className="text-xs font-bold text-slate-600">{opt.percentage}%</span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-1.5">
+                        <div
+                          className="bg-cyan-500 h-1.5 rounded-full transition-all duration-500"
+                          style={{ width: `${opt.percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <Link
+                  to="/enquetes"
+                  className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-600 text-white text-sm font-semibold transition-colors"
+                >
+                  Votar agora
+                </Link>
+              </div>
+            )}
+          </div>
+
+          {/* ── Bloco E — Nossa Viagem ───────────────────────────────────────── */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden h-full flex flex-col">
+              {/* Foto do destino */}
+              <div className="relative h-44 overflow-hidden">
+                <img
+                  src={MOCK_TRIP.coverImageUrl}
+                  alt={MOCK_TRIP.destination}
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                <div className="absolute top-2.5 right-2.5">
+                  <span className="bg-emerald-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow">
+                    <CheckCircle2 className="w-3 h-3" /> Tudo certo!
+                  </span>
+                </div>
+                <div className="absolute bottom-2.5 left-3 text-white">
+                  <p className="text-xs font-semibold drop-shadow">Nossa Viagem</p>
+                </div>
+              </div>
+
+              {/* Informações */}
+              <div className="p-4 flex flex-col flex-1">
+                <h3 className="font-display font-bold text-sm text-slate-800 mb-3">
+                  {MOCK_TRIP.destination} — {MOCK_TRIP.state}
+                </h3>
+
+                <div className="space-y-2 flex-1">
+                  <div className="flex items-center gap-2 text-xs text-slate-600">
+                    <Calendar className="w-3.5 h-3.5 text-cyan-500 shrink-0" />
+                    <span>{MOCK_TRIP.startDate} a {MOCK_TRIP.endDate}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-slate-600">
+                    <MapPin className="w-3.5 h-3.5 text-cyan-500 shrink-0" />
+                    <span>Fortaleza, CE</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-slate-600">
+                    <Users className="w-3.5 h-3.5 text-cyan-500 shrink-0" />
+                    <span>{totalCount} participantes · {confirmedCount} confirmados</span>
+                  </div>
+                </div>
+
+                <div className="mt-4 p-3 bg-emerald-50 rounded-xl border border-emerald-100">
+                  <p className="text-[11px] font-semibold text-emerald-700 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Sua presença está registrada.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      {/* ── BLOCO F — Rodapé informativo ─────────────────────────────────────── */}
+      <footer className="mx-4 md:mx-6 lg:mx-8 mb-6 mt-1">
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 px-5 py-4">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            {/* 3 diferenciais */}
+            <div className="flex flex-wrap justify-center md:justify-start gap-6">
+              <div className="flex items-center gap-2 text-slate-600">
+                <div className="w-8 h-8 rounded-lg bg-cyan-50 flex items-center justify-center">
+                  <TrendingUp className="w-4 h-4 text-cyan-500" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-700">Divisão de Custos</p>
+                  <p className="text-[10px] text-slate-500">Transparente e justa</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-slate-600">
+                <div className="w-8 h-8 rounded-lg bg-cyan-50 flex items-center justify-center">
+                  <Shield className="w-4 h-4 text-cyan-500" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-700">Viagem Privada</p>
+                  <p className="text-[10px] text-slate-500">Apenas convidados</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-slate-600">
+                <div className="w-8 h-8 rounded-lg bg-cyan-50 flex items-center justify-center">
+                  <Bell className="w-4 h-4 text-cyan-500" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-700">Notificações</p>
+                  <p className="text-[10px] text-slate-500">Fique por dentro de tudo</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Frase de encerramento */}
+            <p className="font-display italic text-sm text-cyan-500 font-semibold whitespace-nowrap">
+              Vamos viver esse verão juntos! 🌊
+            </p>
+          </div>
+        </div>
+      </footer>
 
     </div>
   );

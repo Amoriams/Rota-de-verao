@@ -13,6 +13,7 @@ import { MOCK_ACCOMMODATIONS } from '../data/mockData';
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
+import { PageShell } from '../components/layout/PageShell';
 
 export const Accommodations: React.FC = () => {
   const [selectedPhotos, setSelectedPhotos] = useState<Record<string, number>>({
@@ -26,6 +27,7 @@ export const Accommodations: React.FC = () => {
   };
 
   return (
+    <PageShell>
     <div className="space-y-8">
       
       {/* Cabeçalho */}
@@ -194,5 +196,6 @@ export const Accommodations: React.FC = () => {
       </div>
 
     </div>
+    </PageShell>
   );
 };

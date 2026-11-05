@@ -155,3 +155,4 @@ export const Navbar: React.FC<NavbarProps> = ({ currentRole }) => {
     </header>
   );
 };
+

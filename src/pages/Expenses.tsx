@@ -8,6 +8,7 @@ import {
 import { MOCK_EXPENSES } from '../data/mockData';
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
+import { PageShell } from '../components/layout/PageShell';
 
 export const Expenses: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -35,6 +36,7 @@ export const Expenses: React.FC = () => {
   };
 
   return (
+    <PageShell>
     <div className="space-y-8">
       
       {/* Cabeçalho */}
@@ -237,5 +239,6 @@ export const Expenses: React.FC = () => {
       </div>
 
     </div>
+    </PageShell>
   );
 };
