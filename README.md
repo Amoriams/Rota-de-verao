@@ -69,7 +69,7 @@ npm install
 npm run dev
 ```
 
-Abra seu navegador em [http://localhost:3000](http://localhost:3000) (ou na porta indicada no terminal) para interagir com a interface.
+Abra seu navegador em [http://localhost:5173](http://localhost:5173) para interagir com a interface.
 
 Para testar a compilação e gerar o pacote de produção:
 ```bash
