@@ -23,6 +23,7 @@ import {
   MOCK_POLLS, 
   MOCK_ACTIVITY_LOGS 
 } from '../data/mockData';
+import { useTrip } from '../contexts/TripContext';
 import { Button } from '../components/common/Button';
 import { PageShell } from '../components/layout/PageShell';
 
@@ -31,6 +32,16 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ currentRole }) => {
+  const { currentTrip } = useTrip();
+
+  // Dados com prioridade para a viagem ativa selecionada
+  const tripTitle = currentTrip?.title || MOCK_TRIP.title;
+  const tripDestination = currentTrip ? [currentTrip.destination, currentTrip.city, currentTrip.state].filter(Boolean).join(', ') : MOCK_TRIP.destination;
+  const tripDates = currentTrip?.start_date && currentTrip?.end_date 
+    ? `${currentTrip.start_date} a ${currentTrip.end_date}` 
+    : `${MOCK_TRIP.startDate} a ${MOCK_TRIP.endDate}`;
+  const estimatedBudget = currentTrip?.estimated_budget_per_person ?? MOCK_TRIP.estimatedBudgetPerPerson;
+
   const confirmedParticipants = MOCK_PARTICIPANTS.filter(p => p.status === 'confirmed');
 
   const fullyConfirmedCouples = MOCK_COUPLES.filter(c => 
@@ -61,10 +72,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentRole }) => {
           </div>
           <p className="text-tropical-text-muted text-sm mt-1.5 flex items-center gap-2">
             <MapPin className="w-3.5 h-3.5 text-tropical-coral" />
-            <span>{MOCK_TRIP.title} &bull; {MOCK_TRIP.destination}</span>
+            <span>{tripTitle} &bull; {tripDestination}</span>
             <span className="text-tropical-sand-border">&bull;</span>
             <Calendar className="w-3.5 h-3.5 text-tropical-turquoise" />
-            <span>{MOCK_TRIP.startDate} a {MOCK_TRIP.endDate}</span>
+            <span>{tripDates}</span>
           </p>
         </div>
 
@@ -170,7 +181,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentRole }) => {
           </div>
           <div className="flex items-baseline gap-1">
             <span className="text-3xl font-extrabold font-display text-tropical-text">
-              R$ {MOCK_TRIP.estimatedBudgetPerPerson.toLocaleString('pt-BR')}
+              R$ {estimatedBudget ? estimatedBudget.toLocaleString('pt-BR') : '0,00'}
             </span>
           </div>
           <p className="text-[11px] text-tropical-text-secondary">

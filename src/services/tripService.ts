@@ -89,19 +89,20 @@ export const tripService = {
    * Cria uma nova viagem
    */
   async createTrip(payload: Partial<Trip>): Promise<Trip> {
+    if (!payload.title?.trim()) throw new Error('O nome da viagem é obrigatório.');
+    if (!payload.destination?.trim()) throw new Error('O destino é obrigatório.');
+
     const newTrip: Trip = {
       id: payload.id || crypto.randomUUID(),
-      title: payload.title?.trim() || 'Nova Viagem de Verão',
-      destination: payload.destination?.trim() || 'Destino de Praia',
+      title: payload.title.trim(),
+      destination: payload.destination.trim(),
       city: payload.city?.trim() || null,
       state: payload.state?.trim() || null,
-      country: payload.country?.trim() || 'Brasil',
-      start_date: payload.start_date || new Date().toISOString().split('T')[0],
-      end_date: payload.end_date || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
-      cover_image_url:
-        payload.cover_image_url?.trim() ||
-        'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1920&q=80',
-      description: payload.description?.trim() || '',
+      country: payload.country?.trim() || null,
+      start_date: payload.start_date || null as unknown as string,
+      end_date: payload.end_date || null as unknown as string,
+      cover_image_url: payload.cover_image_url?.trim() || null,
+      description: payload.description?.trim() || null,
       estimated_budget_per_person: payload.estimated_budget_per_person ?? null,
       is_archived: false,
       archived_at: null,
@@ -110,10 +111,10 @@ export const tripService = {
       updated_at: new Date().toISOString(),
     };
 
+    // Modo demo (sem Supabase): salva no localStorage sem inventar dados
     if (!isSupabaseConfigured) {
       const trips = getLocalTrips();
-      const updated = [newTrip, ...trips];
-      saveLocalTrips(updated);
+      saveLocalTrips([newTrip, ...trips]);
       return newTrip;
     }
 

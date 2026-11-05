@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useTrip } from '../contexts/TripContext';
 import { tripService } from '../services/tripService';
 import { memberService } from '../services/memberService';
 import { flightService } from '../services/flightService';
@@ -33,6 +34,7 @@ import { Trip, TripMemberWithProfile, Flight, Accommodation, VehicleWithInterest
 
 export const Home: React.FC = () => {
   const { user } = useAuth();
+  const { currentTrip } = useTrip();
 
   const [trip, setTrip] = useState<Trip | null>(null);
   const [members, setMembers] = useState<TripMemberWithProfile[]>([]);
@@ -51,8 +53,8 @@ export const Home: React.FC = () => {
     setErrorMessage(null);
 
     try {
-      // 1. Busca dados da viagem
-      const tripData = await tripService.getTrip();
+      // 1. Usa a viagem ativa selecionada no contexto (ou busca fallback)
+      const tripData = currentTrip || await tripService.getTrip();
       setTrip(tripData);
 
       if (!tripData) {
@@ -91,7 +93,7 @@ export const Home: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, [loadData, currentTrip?.id]);
 
   // Cálculo de contagem regressiva para a viagem
   const daysUntilTrip = useMemo(() => {

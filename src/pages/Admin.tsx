@@ -13,13 +13,23 @@ import {
   Shield
 } from 'lucide-react';
 import { MOCK_TRIP, MOCK_PARTICIPANTS, MOCK_ACTIVITY_LOGS } from '../data/mockData';
+import { useTrip } from '../contexts/TripContext';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { PageShell } from '../components/layout/PageShell';
 
 export const Admin: React.FC = () => {
   const [copiedTokenId, setCopiedTokenId] = useState<string | null>(null);
-  const tripData = MOCK_TRIP;
+  const { currentTrip } = useTrip();
+  
+  const tripData = {
+    title: currentTrip?.title || MOCK_TRIP.title,
+    destination: currentTrip?.destination || MOCK_TRIP.destination,
+    state: currentTrip?.state || MOCK_TRIP.state || 'CE',
+    startDate: currentTrip?.start_date || MOCK_TRIP.startDate,
+    endDate: currentTrip?.end_date || MOCK_TRIP.endDate,
+    estimatedBudgetPerPerson: currentTrip?.estimated_budget_per_person ?? MOCK_TRIP.estimatedBudgetPerPerson
+  };
   const participants = MOCK_PARTICIPANTS;
 
   // Simulação de cópia do link de convite

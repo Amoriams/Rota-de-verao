@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useTrip } from '../contexts/TripContext';
 import { tripService } from '../services/tripService';
 import { memberService } from '../services/memberService';
 import { Badge } from '../components/common/Badge';
@@ -23,6 +24,7 @@ import { TripMemberWithProfile, CoupleStatusView, ConfirmationStatus } from '../
 
 export const Participants: React.FC = () => {
   const { user, role } = useAuth();
+  const { currentTrip } = useTrip();
 
   const [viewMode, setViewMode] = useState<'couples' | 'individual'>('couples');
   const [members, setMembers] = useState<TripMemberWithProfile[]>([]);
@@ -40,11 +42,13 @@ export const Participants: React.FC = () => {
     setErrorMessage(null);
 
     try {
-      const trip = await tripService.getTrip();
+      const trip = currentTrip || await tripService.getTrip();
 
       if (!trip) {
         // Sem viagem ativa — mantém estado vazio
         setTripId(null);
+        setMembers([]);
+        setCouples([]);
         return;
       }
 
@@ -74,7 +78,7 @@ export const Participants: React.FC = () => {
 
   useEffect(() => {
     loadParticipantsData();
-  }, [loadParticipantsData]);
+  }, [loadParticipantsData, currentTrip?.id]);
 
   // Alterna confirmação de presença com validação de permissão
   const handleToggleStatus = async (memberId: string, profileId: string, currentStatus: ConfirmationStatus) => {
