@@ -11,13 +11,14 @@ const AppLayout: React.FC = () => {
   const location = useLocation();
 
   const isLoginPage = location.pathname === '/entrar';
+  const isJoinPage = location.pathname.startsWith('/convite/');
 
   const handleToggleRole = () => {
     setDemoRole(role === 'admin' ? 'member' : 'admin');
   };
 
-  // Se estiver na tela de login, renderiza a tela cheia sem sidebar
-  if (isLoginPage) {
+  // Se estiver na tela de login ou na página de convite público, renderiza tela cheia
+  if (isLoginPage || isJoinPage) {
     return <AppRoutes currentRole={role} />;
   }
 

@@ -11,7 +11,10 @@ import {
   RotateCcw,
   Sparkles,
   Palmtree,
-  Shield
+  Shield,
+  Share2,
+  Check,
+  Trash2
 } from 'lucide-react';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -35,6 +38,7 @@ export const Participants: React.FC = () => {
   const [isError, setIsError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [feedbackMsg, setFeedbackMsg] = useState<{ text: string; type: 'success' | 'warning' } | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const loadParticipantsData = useCallback(async () => {
     setIsLoading(true);
@@ -79,6 +83,39 @@ export const Participants: React.FC = () => {
   useEffect(() => {
     loadParticipantsData();
   }, [loadParticipantsData, currentTrip?.id]);
+
+  // Cópia do link compartilhável da viagem
+  const handleCopyShareLink = () => {
+    if (!tripId) return;
+    const shareUrl = `${window.location.origin}/convite/${tripId}`;
+    navigator.clipboard?.writeText?.(shareUrl);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2500);
+  };
+
+  // Exclusão de participante (apenas administradora)
+  const handleRemoveMember = async (memberId: string, memberName: string) => {
+    if (role !== 'admin') return;
+    const confirmRemove = window.confirm(`Deseja realmente remover ${memberName} desta viagem?`);
+    if (!confirmRemove) return;
+
+    try {
+      await memberService.removeMember(memberId);
+      setFeedbackMsg({
+        text: `${memberName} foi removido(a) da viagem.`,
+        type: 'success',
+      });
+      setTimeout(() => setFeedbackMsg(null), 3500);
+      loadParticipantsData();
+    } catch (err: unknown) {
+      console.error('Erro ao remover participante:', err);
+      setFeedbackMsg({
+        text: 'Falha ao remover participante.',
+        type: 'warning',
+      });
+      setTimeout(() => setFeedbackMsg(null), 3500);
+    }
+  };
 
   // Alterna confirmação de presença com validação de permissão
   const handleToggleStatus = async (memberId: string, profileId: string, currentStatus: ConfirmationStatus) => {
@@ -236,30 +273,55 @@ export const Participants: React.FC = () => {
           </p>
         </div>
 
-        {/* Alternador de Modo de Visualização */}
-        <div className="inline-flex p-1 rounded-2xl bg-white border border-tropical-sand-border/60 shadow-tropical-sm self-start md:self-auto">
-          <button
-            onClick={() => setViewMode('couples')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition-all cursor-pointer ${
-              viewMode === 'couples'
-                ? 'bg-tropical-ocean text-white shadow-tropical-sm'
-                : 'text-tropical-text-secondary hover:text-tropical-ocean hover:bg-tropical-sand-50'
-            }`}
-          >
-            <Heart className="w-4 h-4 text-tropical-coral" />
-            Visão por Casais
-          </button>
-          <button
-            onClick={() => setViewMode('individual')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition-all cursor-pointer ${
-              viewMode === 'individual'
-                ? 'bg-tropical-ocean text-white shadow-tropical-sm'
-                : 'text-tropical-text-secondary hover:text-tropical-ocean hover:bg-tropical-sand-50'
-            }`}
-          >
-            <Users className="w-4 h-4 text-tropical-turquoise" />
-            Visão Individual ({members.length})
-          </button>
+        {/* Ações e Alternador de Modo de Visualização */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          {tripId && (
+            <button
+              onClick={handleCopyShareLink}
+              className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs md:text-sm font-bold transition-all shadow-tropical-sm border cursor-pointer ${
+                linkCopied
+                  ? 'bg-tropical-palm-50 text-tropical-palm border-tropical-palm-200'
+                  : 'bg-white text-tropical-ocean border-tropical-sand-border hover:bg-tropical-sand-50'
+              }`}
+            >
+              {linkCopied ? (
+                <>
+                  <Check className="w-4 h-4 text-tropical-palm" />
+                  Link Copiado!
+                </>
+              ) : (
+                <>
+                  <Share2 className="w-4 h-4 text-tropical-coral" />
+                  Link de Convite da Viagem
+                </>
+              )}
+            </button>
+          )}
+
+          <div className="inline-flex p-1 rounded-2xl bg-white border border-tropical-sand-border/60 shadow-tropical-sm">
+            <button
+              onClick={() => setViewMode('couples')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition-all cursor-pointer ${
+                viewMode === 'couples'
+                  ? 'bg-tropical-ocean text-white shadow-tropical-sm'
+                  : 'text-tropical-text-secondary hover:text-tropical-ocean hover:bg-tropical-sand-50'
+              }`}
+            >
+              <Heart className="w-4 h-4 text-tropical-coral" />
+              Visão por Casais
+            </button>
+            <button
+              onClick={() => setViewMode('individual')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition-all cursor-pointer ${
+                viewMode === 'individual'
+                  ? 'bg-tropical-ocean text-white shadow-tropical-sm'
+                  : 'text-tropical-text-secondary hover:text-tropical-ocean hover:bg-tropical-sand-50'
+              }`}
+            >
+              <Users className="w-4 h-4 text-tropical-turquoise" />
+              Visão Individual ({members.length})
+            </button>
+          </div>
         </div>
       </div>
 
@@ -498,12 +560,24 @@ export const Participants: React.FC = () => {
                     {member.profile.phone || 'Sem WhatsApp'}
                   </span>
 
-                  <button
-                    onClick={() => handleToggleStatus(member.id, member.profile_id, member.confirmation_status)}
-                    className="text-xs font-bold text-tropical-ocean hover:text-tropical-coral transition-colors underline cursor-pointer"
-                  >
-                    {member.confirmation_status === 'confirmed' ? 'Marcar Pendente' : 'Confirmar Presença'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleToggleStatus(member.id, member.profile_id, member.confirmation_status)}
+                      className="text-xs font-bold text-tropical-ocean hover:text-tropical-coral transition-colors underline cursor-pointer"
+                    >
+                      {member.confirmation_status === 'confirmed' ? 'Marcar Pendente' : 'Confirmar Presença'}
+                    </button>
+
+                    {role === 'admin' && member.role !== 'admin' && (
+                      <button
+                        onClick={() => handleRemoveMember(member.id, member.profile.full_name)}
+                        className="p-1 rounded-lg text-tropical-text-muted hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                        title="Remover participante"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}

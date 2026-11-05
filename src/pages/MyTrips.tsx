@@ -11,6 +11,8 @@ import {
   ChevronDown,
   Loader2,
   Image as ImageIcon,
+  Share2,
+  Check,
 } from 'lucide-react';
 import { Trip } from '../@types/database.types';
 import { useTrip } from '../contexts/TripContext';
@@ -77,6 +79,15 @@ const TripCard: React.FC<TripCardProps> = ({
   onExcluir,
   arquivando,
 }) => {
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  const handleCopyLink = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const link = `${window.location.origin}/convite/${trip.id}`;
+    navigator.clipboard?.writeText?.(link);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
+  };
   return (
     <article className="tropical-card flex flex-col overflow-hidden group">
       {/* Imagem de capa ou placeholder */}
@@ -136,6 +147,16 @@ const TripCard: React.FC<TripCardProps> = ({
             title={isSelecionada ? 'Já é a viagem selecionada' : 'Selecionar esta viagem'}
           >
             {isSelecionada ? 'Selecionada' : 'Selecionar'}
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleCopyLink}
+            icon={copiedLink ? <Check className="w-3 h-3 text-tropical-palm" /> : <Share2 className="w-3 h-3 text-tropical-ocean" />}
+            title="Copiar link compartilhável para convidar participantes"
+          >
+            {copiedLink ? 'Copiado!' : 'Link'}
           </Button>
 
           <Button size="sm" variant="outline" onClick={onEditar} icon={<Edit2 className="w-3 h-3" />}>

@@ -11,6 +11,7 @@ import { Expenses } from '../pages/Expenses';
 import { Admin } from '../pages/Admin';
 import { Login } from '../pages/Login';
 import { MyTrips } from '../pages/MyTrips';
+import { JoinTrip } from '../pages/JoinTrip';
 import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 
 interface AppRoutesProps {
@@ -22,6 +23,9 @@ export const AppRoutes: React.FC<AppRoutesProps> = ({ currentRole }) => {
     <Routes>
       {/* Rota pública de login com PIN / e-mail */}
       <Route path="/entrar" element={<Login />} />
+
+      {/* Rota pública de entrada por link compartilhável da viagem */}
+      <Route path="/convite/:tripId" element={<JoinTrip />} />
 
       {/* Rotas protegidas acessíveis a membros e administradores */}
       <Route
