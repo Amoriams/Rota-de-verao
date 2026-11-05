@@ -22,12 +22,16 @@ export interface Trip {
   id: string;
   title: string;
   destination: string;
+  city?: string;
   state: string;
+  country?: string;
   startDate: string;
   endDate: string;
   coverImageUrl: string;
   description: string;
   estimatedBudgetPerPerson: number;
+  isArchived?: boolean;
+  archivedAt?: string;
 }
 
 export interface Participant {

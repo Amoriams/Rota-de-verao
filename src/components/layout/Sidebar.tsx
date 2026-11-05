@@ -14,18 +14,21 @@ import {
   Palmtree,
   Sun,
   Compass,
+  Map,
 } from 'lucide-react';
+import { TripSwitcher } from '../trips/TripSwitcher';
 
 const navItems = [
-  { label: 'Início',        to: '/',              icon: Home },
-  { label: 'Viagem',        to: '/dashboard',     icon: Compass },
-  { label: 'Passagens',     to: '/passagens',     icon: PlaneTakeoff },
-  { label: 'Hospedagem',    to: '/hospedagem',    icon: Building2 },
-  { label: 'Carros',        to: '/veiculos',      icon: Car },
-  { label: 'Participantes', to: '/participantes', icon: Users },
-  { label: 'Votações',      to: '/enquetes',      icon: Vote },
-  { label: 'Despesas',      to: '/financeiro',    icon: Receipt },
-  { label: 'Configurações', to: '/administracao', icon: Settings },
+  { label: 'Início',          to: '/',                icon: Home,          adminOnly: false },
+  { label: 'Viagem',          to: '/dashboard',       icon: Compass,       adminOnly: false },
+  { label: 'Passagens',       to: '/passagens',       icon: PlaneTakeoff,  adminOnly: false },
+  { label: 'Hospedagem',      to: '/hospedagem',      icon: Building2,     adminOnly: false },
+  { label: 'Carros',          to: '/veiculos',        icon: Car,           adminOnly: false },
+  { label: 'Participantes',   to: '/participantes',   icon: Users,         adminOnly: false },
+  { label: 'Votações',        to: '/enquetes',        icon: Vote,          adminOnly: false },
+  { label: 'Despesas',        to: '/financeiro',      icon: Receipt,       adminOnly: false },
+  { label: 'Minhas Viagens',  to: '/minhas-viagens',  icon: Map,           adminOnly: true  },
+  { label: 'Configurações',   to: '/administracao',   icon: Settings,      adminOnly: true  },
 ];
 
 interface SidebarProps {
@@ -39,8 +42,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRole }) => {
   const SidebarContent = () => (
     <div className="flex flex-col h-full bg-white select-none">
       {/* Brand Header */}
-      <div className="px-6 pt-7 pb-6 border-b border-tropical-sand-border/30">
-        <div className="flex items-center gap-3">
+      <div className="px-6 pt-7 pb-4 border-b border-tropical-sand-border/30">
+        <div className="flex items-center gap-3 mb-4">
           <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-tropical-ocean to-tropical-turquoise flex items-center justify-center shadow-tropical-sm text-white relative overflow-hidden group">
             <Palmtree className="w-5 h-5 text-white relative z-10 transition-transform duration-300 group-hover:scale-110" />
             <Sun className="w-3.5 h-3.5 text-tropical-sand-200 absolute -top-1 -right-1 opacity-80" />
@@ -56,22 +59,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRole }) => {
           </div>
         </div>
 
-        {/* Destino Badge */}
-        <div className="mt-4 px-3 py-1.5 rounded-xl bg-tropical-sand-50 border border-tropical-sand-border/50 flex items-center justify-between">
-          <span className="text-[11px] font-semibold text-tropical-text-secondary flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-tropical-coral animate-pulse" />
-            Fortaleza &bull; Ceará
-          </span>
-          <span className="text-[10px] font-medium text-tropical-palm font-mono bg-tropical-palm-50 px-2 py-0.5 rounded-full">
-            Jan/2027
-          </span>
-        </div>
+        {/* Seletor de viagem ativa */}
+        <TripSwitcher />
       </div>
 
       {/* Navigation Links */}
       <nav className="flex-1 px-3.5 py-5 space-y-1 overflow-y-auto">
-        {navItems.map(({ label, to, icon: Icon }) => {
-          if (label === 'Configurações' && currentRole !== 'admin') return null;
+        {navItems.map(({ label, to, icon: Icon, adminOnly }) => {
+          if (adminOnly && currentRole !== 'admin') return null;
 
           const isActive =
             to === '/'

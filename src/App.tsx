@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { TripProvider } from './contexts/TripContext';
 import { DisclaimerBanner } from './components/common/DisclaimerBanner';
 import { Sidebar } from './components/layout/Sidebar';
 import { AppRoutes } from './routes/AppRoutes';
@@ -46,7 +47,9 @@ export const App: React.FC = () => {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppLayout />
+        <TripProvider>
+          <AppLayout />
+        </TripProvider>
       </AuthProvider>
     </BrowserRouter>
   );

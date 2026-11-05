@@ -27,7 +27,7 @@ export const Participants: React.FC = () => {
   const [viewMode, setViewMode] = useState<'couples' | 'individual'>('couples');
   const [members, setMembers] = useState<TripMemberWithProfile[]>([]);
   const [couples, setCouples] = useState<CoupleStatusView[]>([]);
-  const [tripId, setTripId] = useState<string>('');
+  const [tripId, setTripId] = useState<string | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isError, setIsError] = useState(false);
@@ -41,6 +41,13 @@ export const Participants: React.FC = () => {
 
     try {
       const trip = await tripService.getTrip();
+
+      if (!trip) {
+        // Sem viagem ativa — mantém estado vazio
+        setTripId(null);
+        return;
+      }
+
       setTripId(trip.id);
 
       const [membersData, couplesData] = await Promise.all([

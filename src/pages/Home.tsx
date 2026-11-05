@@ -55,6 +55,11 @@ export const Home: React.FC = () => {
       const tripData = await tripService.getTrip();
       setTrip(tripData);
 
+      if (!tripData) {
+        // Sem viagem ativa — mantém estado vazio sem erro
+        return;
+      }
+
       // 2. Busca membros, voos, acomodações, veículos e enquetes
       const [membersData, flightsData, accsData, vehiclesData, pollsData] = await Promise.all([
         memberService.getMembers(tripData.id),

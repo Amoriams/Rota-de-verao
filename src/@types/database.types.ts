@@ -31,12 +31,16 @@ export type Trip = {
   id: string;
   title: string;
   destination: string;
+  city?: string | null;
   state: string | null;
+  country?: string | null;
   start_date: string;
   end_date: string;
   cover_image_url: string | null;
   description: string | null;
   estimated_budget_per_person: number | null;
+  is_archived?: boolean;
+  archived_at?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;

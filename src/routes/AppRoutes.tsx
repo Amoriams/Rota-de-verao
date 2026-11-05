@@ -10,6 +10,7 @@ import { Polls } from '../pages/Polls';
 import { Expenses } from '../pages/Expenses';
 import { Admin } from '../pages/Admin';
 import { Login } from '../pages/Login';
+import { MyTrips } from '../pages/MyTrips';
 import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 
 interface AppRoutesProps {
@@ -89,6 +90,14 @@ export const AppRoutes: React.FC<AppRoutesProps> = ({ currentRole }) => {
       />
 
       {/* Rota exclusiva da Administradora */}
+      <Route
+        path="/minhas-viagens"
+        element={
+          <ProtectedRoute requireAdmin>
+            <MyTrips />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/administracao"
         element={
