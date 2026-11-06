@@ -4,33 +4,6 @@ import { ConfirmationStatus, TripMemberWithProfile, CoupleStatusView } from '../
 
 const STORAGE_MEMBERS_KEY = 'rota_de_verao_custom_members';
 const STORAGE_COUPLES_KEY = 'rota_de_verao_custom_couples';
-const STORAGE_INVITES_KEY = 'rota_de_verao_trip_invitations';
-
-interface LocalTripInvite {
-  trip_id: string;
-  token: string;
-  expires_at: string;
-  is_revoked: boolean;
-  created_at: string;
-}
-
-function getLocalInvites(): LocalTripInvite[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_INVITES_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (err) {
-    console.error('Erro ao ler convites locais:', err);
-    return [];
-  }
-}
-
-function saveLocalInvites(invites: LocalTripInvite[]) {
-  try {
-    localStorage.setItem(STORAGE_INVITES_KEY, JSON.stringify(invites));
-  } catch (err) {
-    console.error('Erro ao salvar convites locais:', err);
-  }
-}
 
 function getLocalMembers(): TripMemberWithProfile[] {
   try {
@@ -292,33 +265,17 @@ export const memberService = {
   },
 
   /**
-   * Obtém o link de convite ativo ou cria um novo com token criptográfico seguro
+   * Obtém metadados do convite ativo existente ou cria um novo com token criptográfico seguro.
+   * Se já existir convite ativo no banco, retorna is_new=false e token=null
+   * (o token original não é armazenado no banco; use regenerateTripInvite para obter um novo).
+   * Se não existir, cria um novo e retorna o token em texto puro SOMENTE neste momento.
    */
-  async getOrCreateTripInvite(tripId: string): Promise<{ token: string; expiresAt: string }> {
+  async getOrCreateTripInvite(tripId: string): Promise<{ token: string | null; expiresAt: string; isNew: boolean }> {
     if (!isSupabaseConfigured) {
-      const invites = getLocalInvites();
-      const active = invites.find(
-        (i) => i.trip_id === tripId && !i.is_revoked && new Date(i.expires_at) > new Date()
+      throw new Error(
+        'Operação indisponível: o Supabase não está configurado. ' +
+        'Convites só podem ser gerenciados com conexão ativa ao banco de dados.'
       );
-      if (active) {
-        return { token: active.token, expiresAt: active.expires_at };
-      }
-
-      // Gera novo token aleatório seguro de 48 caracteres hex
-      const array = new Uint8Array(24);
-      crypto.getRandomValues(array);
-      const token = Array.from(array, (byte) => byte.toString(16).padStart(2, '0')).join('');
-      const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
-
-      const newInvite: LocalTripInvite = {
-        trip_id: tripId,
-        token,
-        expires_at: expiresAt,
-        is_revoked: false,
-        created_at: new Date().toISOString(),
-      };
-      saveLocalInvites([...invites, newInvite]);
-      return { token, expiresAt };
     }
 
     const { data, error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ data: any; error: Error | null }>)(
@@ -331,35 +288,19 @@ export const memberService = {
       throw error;
     }
 
-    return { token: data.token, expiresAt: data.expires_at };
+    return { token: data.token || null, expiresAt: data.expires_at, isNew: data.is_new };
   },
 
   /**
-   * Regenera o link de convite da viagem (revoga o anterior e cria um novo)
+   * Regenera o link de convite da viagem (revoga o anterior e cria um novo).
+   * Retorna o novo token em texto puro. Requer conexão com Supabase.
    */
   async regenerateTripInvite(tripId: string): Promise<{ token: string; expiresAt: string }> {
     if (!isSupabaseConfigured) {
-      const invites = getLocalInvites();
-      // Revoga anteriores da viagem
-      const updated = invites.map((i) =>
-        i.trip_id === tripId ? { ...i, is_revoked: true } : i
+      throw new Error(
+        'Operação indisponível: o Supabase não está configurado. ' +
+        'Convites só podem ser regenerados com conexão ativa ao banco de dados.'
       );
-
-      const array = new Uint8Array(24);
-      crypto.getRandomValues(array);
-      const token = Array.from(array, (byte) => byte.toString(16).padStart(2, '0')).join('');
-      const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
-
-      const newInvite: LocalTripInvite = {
-        trip_id: tripId,
-        token,
-        expires_at: expiresAt,
-        is_revoked: false,
-        created_at: new Date().toISOString(),
-      };
-
-      saveLocalInvites([...updated, newInvite]);
-      return { token, expiresAt };
     }
 
     const { data, error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ data: any; error: Error | null }>)(
@@ -376,16 +317,15 @@ export const memberService = {
   },
 
   /**
-   * Revoga todos os links de convite ativos da viagem (desativa convites)
+   * Revoga todos os links de convite ativos da viagem (desativa convites).
+   * Requer conexão com Supabase.
    */
   async revokeTripInvite(tripId: string): Promise<void> {
     if (!isSupabaseConfigured) {
-      const invites = getLocalInvites();
-      const updated = invites.map((i) =>
-        i.trip_id === tripId ? { ...i, is_revoked: true } : i
+      throw new Error(
+        'Operação indisponível: o Supabase não está configurado. ' +
+        'Convites só podem ser revogados com conexão ativa ao banco de dados.'
       );
-      saveLocalInvites(updated);
-      return;
     }
 
     const { error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ data: any; error: Error | null }>)(
@@ -409,7 +349,7 @@ export const memberService = {
     partnerName?: string;
     userProfile?: { id: string; full_name?: string | null; avatar_url?: string | null };
   }): Promise<{ memberId: string; profileId: string; alreadyMember?: boolean }> {
-    const { tripId, token, isCouple, partnerName, userProfile } = payload;
+    const { tripId, token, isCouple, partnerName } = payload;
 
     // Regra Fundamental: UUID sozinho NUNCA concede acesso
     if (!token || token.trim().length < 8) {
@@ -419,113 +359,11 @@ export const memberService = {
     }
 
     if (!isSupabaseConfigured) {
-      // Valida token nos convites locais
-      const invites = getLocalInvites();
-      const validInvite = invites.find(
-        (i) => i.trip_id === tripId && i.token.trim() === token.trim()
+      throw new Error(
+        'Operação indisponível: o Supabase não está configurado. ' +
+        'A entrada em viagens exige validação real do convite no banco de dados. ' +
+        'Nenhum participante pode ser adicionado sem confirmação do servidor.'
       );
-
-      // Se não houver convite cadastrado para viagens padrão de teste, criamos o convite inicial para não quebrar
-      if (!validInvite && (token.length >= 8)) {
-        // Se for um token arbitrário inexistente, bloqueia
-        const anyForTrip = invites.filter((i) => i.trip_id === tripId);
-        if (anyForTrip.length > 0) {
-          throw new Error('Convite inválido para esta viagem.');
-        }
-      }
-
-      if (validInvite) {
-        if (validInvite.is_revoked) {
-          throw new Error('Este link de convite foi revogado pela administradora.');
-        }
-        if (new Date(validInvite.expires_at) < new Date()) {
-          throw new Error('Este link de convite expirou.');
-        }
-      }
-
-      const allMembers = getLocalMembers();
-      const allCouples = getLocalCouples();
-
-      const profileId = userProfile?.id || `user-${Date.now()}`;
-      const existing = allMembers.find((m) => m.trip_id === tripId && m.profile_id === profileId);
-      if (existing) {
-        return { memberId: existing.id, profileId: existing.profile_id, alreadyMember: true };
-      }
-
-      const memberId = `member-${Date.now()}`;
-      const coupleId = isCouple ? `couple-${Date.now()}` : null;
-      const userName = userProfile?.full_name?.trim() || 'Participante';
-
-      const newMember: TripMemberWithProfile = {
-        id: memberId,
-        trip_id: tripId,
-        profile_id: profileId,
-        role: 'member',
-        confirmation_status: 'confirmed',
-        couple_id: coupleId,
-        confirmed_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        profile: {
-          id: profileId,
-          full_name: userName,
-          nickname: null,
-          phone: null,
-          avatar_url: userProfile?.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(userName)}`,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-      };
-
-      const updatedMembers = [...allMembers, newMember];
-
-      if (isCouple && partnerName?.trim()) {
-        const partnerProfileId = `user-partner-${Date.now()}`;
-        const partnerMemberId = `member-partner-${Date.now()}`;
-
-        const partnerMember: TripMemberWithProfile = {
-          id: partnerMemberId,
-          trip_id: tripId,
-          profile_id: partnerProfileId,
-          role: 'member',
-          confirmation_status: 'pending',
-          couple_id: coupleId,
-          confirmed_at: null,
-          created_at: new Date().toISOString(),
-          profile: {
-            id: partnerProfileId,
-            full_name: partnerName.trim(),
-            nickname: null,
-            phone: null,
-            avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(partnerName.trim())}`,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-        };
-
-        updatedMembers.push(partnerMember);
-
-        const newCoupleView: CoupleStatusView = {
-          couple_id: coupleId!,
-          trip_id: tripId,
-          label: `${userName} & ${partnerName.trim()}`,
-          member_a_id: profileId,
-          member_b_id: partnerProfileId,
-          member_a_name: userName,
-          member_b_name: partnerName.trim(),
-          member_a_nickname: null,
-          member_b_nickname: null,
-          member_a_avatar: newMember.profile.avatar_url,
-          member_b_avatar: partnerMember.profile.avatar_url,
-          member_a_status: 'confirmed',
-          member_b_status: 'pending',
-          couple_status: 'partial',
-        };
-
-        saveLocalCouples([...allCouples, newCoupleView]);
-      }
-
-      saveLocalMembers(updatedMembers);
-      return { memberId, profileId, alreadyMember: false };
     }
 
     // Supabase RPC com validação estrita de token

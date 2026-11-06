@@ -175,8 +175,25 @@ CREATE TABLE IF NOT EXISTS public.invitations (
 ALTER TABLE public.invitations
   ADD COLUMN IF NOT EXISTS token_hash TEXT;
 ALTER TABLE public.invitations
+  ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ;
+ALTER TABLE public.invitations
   ALTER COLUMN profile_id DROP NOT NULL,
   ALTER COLUMN pin_hash DROP NOT NULL;
+
+-- Garante constraint UNIQUE em token_hash mesmo se a tabela veio de migração anterior
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.invitations'::regclass
+      AND contype = 'u'
+      AND conname LIKE '%token_hash%'
+  ) THEN
+    BEGIN
+      ALTER TABLE public.invitations ADD CONSTRAINT invitations_token_hash_unique UNIQUE (token_hash);
+    EXCEPTION WHEN duplicate_table THEN NULL;
+    END;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_invitations_token_hash ON public.invitations(token_hash);
 CREATE INDEX IF NOT EXISTS idx_invitations_trip_token_hash_active ON public.invitations(trip_id, token_hash) WHERE is_revoked = false;
@@ -365,7 +382,7 @@ RETURNS BOOLEAN
 LANGUAGE sql
 SECURITY DEFINER
 STABLE
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, public, pg_temp
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.trip_members
@@ -380,7 +397,7 @@ RETURNS BOOLEAN
 LANGUAGE sql
 SECURITY DEFINER
 STABLE
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, public, pg_temp
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.trip_members
@@ -405,7 +422,7 @@ CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 BEGIN
   INSERT INTO public.profiles (id, full_name, avatar_url)
@@ -440,7 +457,7 @@ CREATE OR REPLACE FUNCTION public.handle_new_trip()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 BEGIN
   INSERT INTO public.trip_members (
@@ -468,27 +485,32 @@ CREATE TRIGGER on_trip_created
   AFTER INSERT ON public.trips
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_trip();
 
--- 5.5. BLINDAGEM DE TRIP_MEMBERS: impede participante comum de alterar role, profile_id ou trip_id
+-- 5.5. BLINDAGEM DE TRIP_MEMBERS: impede participante comum de alterar role, profile_id, trip_id ou couple_id
+-- Utiliza IS DISTINCT FROM para tratar corretamente comparações com NULL
 CREATE OR REPLACE FUNCTION public.check_trip_member_update()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 BEGIN
   -- Se quem está executando NÃO for o administrador daquela viagem:
   IF NOT public.is_trip_admin(OLD.trip_id) THEN
     -- Proíbe alterar o próprio papel (ex: virar admin)
-    IF NEW.role <> OLD.role THEN
+    IF NEW.role IS DISTINCT FROM OLD.role THEN
       RAISE EXCEPTION 'Acesso negado: apenas a administradora pode alterar papéis de participantes.';
     END IF;
     -- Proíbe mudar o usuário vinculado
-    IF NEW.profile_id <> OLD.profile_id THEN
+    IF NEW.profile_id IS DISTINCT FROM OLD.profile_id THEN
       RAISE EXCEPTION 'Acesso negado: não é permitido alterar o usuário desta participação.';
     END IF;
     -- Proíbe transferir a linha para outra viagem
-    IF NEW.trip_id <> OLD.trip_id THEN
+    IF NEW.trip_id IS DISTINCT FROM OLD.trip_id THEN
       RAISE EXCEPTION 'Acesso negado: não é permitido transferir o registro para outra viagem.';
+    END IF;
+    -- Proíbe alterar o vínculo de casal (couple_id pode ser NULL)
+    IF NEW.couple_id IS DISTINCT FROM OLD.couple_id THEN
+      RAISE EXCEPTION 'Acesso negado: apenas a administradora pode alterar o vínculo de casal.';
     END IF;
   END IF;
   RETURN NEW;
@@ -504,18 +526,21 @@ CREATE TRIGGER trigger_protect_trip_member_update
 -- PARTE 6: CONVITES SEGUROS COM HASH SHA-256 (RPCs)
 -- ─────────────────────────────────────────────────────────────
 
--- 6.1. Obter ou gerar convite ativo para a viagem (apenas administradora)
--- Retorna o token em texto puro SOMENTE no momento da geração
+-- 6.1. Obter convite ativo OU gerar um novo (apenas administradora)
+-- Se já existe convite ativo e não expirado, retorna metadados SEM o token
+-- (o token original nunca é armazenado; apenas o hash SHA-256).
+-- Se NÃO existe convite ativo, gera um novo e retorna o token em texto puro
+-- SOMENTE neste momento. Abrir a tela de participantes NÃO invalida links existentes.
 CREATE OR REPLACE FUNCTION public.get_or_create_trip_invite(p_trip_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, extensions, pg_temp
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_user_id UUID := auth.uid();
   v_is_admin BOOLEAN;
-  v_invite_record RECORD;
+  v_existing RECORD;
   v_raw_token TEXT;
   v_token_hash TEXT;
 BEGIN
@@ -528,15 +553,30 @@ BEGIN
     RAISE EXCEPTION 'Acesso negado: apenas a administradora desta viagem pode gerenciar convites.';
   END IF;
 
-  -- Gera SEMPRE um novo token em texto puro se for solicitado pelo admin
-  -- e invalida o anterior para manter a integridade de hash único
-  v_raw_token := encode(gen_random_bytes(24), 'hex');
-  v_token_hash := encode(digest(v_raw_token, 'sha256'), 'hex');
+  -- Verifica se já existe convite ativo e não expirado para esta viagem
+  SELECT id, expires_at INTO v_existing
+  FROM public.invitations
+  WHERE trip_id = p_trip_id
+    AND profile_id IS NULL
+    AND is_revoked = false
+    AND expires_at > now()
+  ORDER BY created_at DESC
+  LIMIT 1;
 
-  -- Desativa tokens ativos anteriores
-  UPDATE public.invitations
-  SET is_revoked = true
-  WHERE trip_id = p_trip_id AND profile_id IS NULL AND is_revoked = false;
+  -- Se já existe convite ativo, retorna metadados SEM o token
+  -- (o token original não é recuperável; o admin pode usar "regenerar" para obter um novo)
+  IF v_existing.id IS NOT NULL THEN
+    RETURN jsonb_build_object(
+      'success', true,
+      'token', NULL,
+      'expires_at', v_existing.expires_at,
+      'is_new', false
+    );
+  END IF;
+
+  -- Não existe convite ativo: gera um novo token
+  v_raw_token := encode(gen_random_bytes(24), 'hex');
+  v_token_hash := encode(extensions.digest(v_raw_token, 'sha256'), 'hex');
 
   -- Armazena SOMENTE O HASH no banco de dados
   INSERT INTO public.invitations (
@@ -559,7 +599,7 @@ CREATE OR REPLACE FUNCTION public.regenerate_trip_invite(p_trip_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, extensions, pg_temp
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_user_id UUID := auth.uid();
@@ -581,7 +621,7 @@ BEGIN
   WHERE trip_id = p_trip_id AND profile_id IS NULL AND is_revoked = false;
 
   v_raw_token := encode(gen_random_bytes(24), 'hex');
-  v_token_hash := encode(digest(v_raw_token, 'sha256'), 'hex');
+  v_token_hash := encode(extensions.digest(v_raw_token, 'sha256'), 'hex');
 
   INSERT INTO public.invitations (
     trip_id, profile_id, pin_hash, token_hash, expires_at, is_revoked
@@ -603,7 +643,7 @@ CREATE OR REPLACE FUNCTION public.revoke_trip_invite(p_trip_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, extensions, pg_temp
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_user_id UUID := auth.uid();
@@ -639,7 +679,7 @@ CREATE OR REPLACE FUNCTION public.accept_trip_invitation(
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, extensions, pg_temp
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_user_id UUID := auth.uid();
@@ -671,8 +711,8 @@ BEGIN
     RAISE EXCEPTION 'A viagem informada não existe ou foi arquivada.';
   END IF;
 
-  -- 4. Calcula o hash SHA-256 do token fornecido
-  v_presented_hash := encode(digest(trim(p_token), 'sha256'), 'hex');
+  -- 4. Calcula o hash SHA-256 do token fornecido (qualificação explícita de extensions.digest)
+  v_presented_hash := encode(extensions.digest(trim(p_token), 'sha256'), 'hex');
 
   -- 5. Valida contra o token_hash armazenado no banco
   SELECT id, expires_at, is_revoked INTO v_invite_record

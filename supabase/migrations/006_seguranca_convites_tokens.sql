@@ -2,6 +2,10 @@
 -- ROTA DE VERÃO — Migração 006: Segurança Rigorosa dos Convites com Hashing SHA-256
 -- Armazena SOMENTE o hash do token no banco de dados.
 -- Elimina a exigência de PIN e corrige o tratamento de casais sem quebra de FK.
+--
+-- NOTA: Esta migração está 100% incorporada no CONSOLIDATED_SETUP.sql.
+-- Se você executou o CONSOLIDATED_SETUP.sql, NÃO precisa executar este arquivo.
+-- Este arquivo existe apenas como referência incremental.
 -- ============================================================
 
 -- 1. ADAPTAÇÃO DA TABELA INVITATIONS PARA ARMAZENAR APENAS HASH SHA-256
@@ -21,16 +25,20 @@ ALTER TABLE public.couples
 ALTER TABLE public.couples
   ALTER COLUMN member_b_id DROP NOT NULL;
 
--- 3. FUNÇÃO PARA ADMINISTRADORA GERAR LINK ATIVO COM HASH
+-- 3. FUNÇÃO PARA OBTER CONVITE ATIVO OU GERAR NOVO (apenas administradora)
+-- Se já existe convite ativo e não expirado, retorna metadados SEM o token.
+-- Se NÃO existe, cria um novo e retorna o token em texto puro SOMENTE neste momento.
+-- Abrir a tela de participantes NÃO invalida links existentes.
 CREATE OR REPLACE FUNCTION public.get_or_create_trip_invite(p_trip_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, extensions, pg_temp
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_user_id UUID := auth.uid();
   v_is_admin BOOLEAN;
+  v_existing RECORD;
   v_raw_token TEXT;
   v_token_hash TEXT;
 BEGIN
@@ -43,12 +51,29 @@ BEGIN
     RAISE EXCEPTION 'Acesso negado: apenas a administradora desta viagem pode visualizar ou gerar links de convite.';
   END IF;
 
-  v_raw_token := encode(gen_random_bytes(24), 'hex');
-  v_token_hash := encode(digest(v_raw_token, 'sha256'), 'hex');
+  -- Verifica se já existe convite ativo e não expirado
+  SELECT id, expires_at INTO v_existing
+  FROM public.invitations
+  WHERE trip_id = p_trip_id
+    AND profile_id IS NULL
+    AND is_revoked = false
+    AND expires_at > now()
+  ORDER BY created_at DESC
+  LIMIT 1;
 
-  UPDATE public.invitations
-  SET is_revoked = true
-  WHERE trip_id = p_trip_id AND profile_id IS NULL AND is_revoked = false;
+  -- Se já existe, retorna metadados SEM o token
+  IF v_existing.id IS NOT NULL THEN
+    RETURN jsonb_build_object(
+      'success', true,
+      'token', NULL,
+      'expires_at', v_existing.expires_at,
+      'is_new', false
+    );
+  END IF;
+
+  -- Não existe convite ativo: gera um novo token
+  v_raw_token := encode(gen_random_bytes(24), 'hex');
+  v_token_hash := encode(extensions.digest(v_raw_token, 'sha256'), 'hex');
 
   INSERT INTO public.invitations (
     trip_id, profile_id, pin_hash, token_hash, expires_at, is_revoked
@@ -65,12 +90,12 @@ BEGIN
 END;
 $$;
 
--- 4. FUNÇÃO PARA REGENERAR LINK DE CONVITE
+-- 4. FUNÇÃO PARA REGENERAR LINK DE CONVITE (revoga anterior e gera novo)
 CREATE OR REPLACE FUNCTION public.regenerate_trip_invite(p_trip_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, extensions, pg_temp
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_user_id UUID := auth.uid();
@@ -87,12 +112,13 @@ BEGIN
     RAISE EXCEPTION 'Acesso negado: apenas a administradora desta viagem pode regenerar o link de convite.';
   END IF;
 
+  -- Revoga todos os convites ativos anteriores
   UPDATE public.invitations
   SET is_revoked = true
   WHERE trip_id = p_trip_id AND profile_id IS NULL AND is_revoked = false;
 
   v_raw_token := encode(gen_random_bytes(24), 'hex');
-  v_token_hash := encode(digest(v_raw_token, 'sha256'), 'hex');
+  v_token_hash := encode(extensions.digest(v_raw_token, 'sha256'), 'hex');
 
   INSERT INTO public.invitations (
     trip_id, profile_id, pin_hash, token_hash, expires_at, is_revoked
@@ -114,7 +140,7 @@ CREATE OR REPLACE FUNCTION public.revoke_trip_invite(p_trip_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, extensions, pg_temp
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_user_id UUID := auth.uid();
@@ -150,7 +176,7 @@ CREATE OR REPLACE FUNCTION public.accept_trip_invitation(
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, extensions, pg_temp
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_user_id UUID := auth.uid();
@@ -179,7 +205,7 @@ BEGIN
     RAISE EXCEPTION 'A viagem informada não existe ou foi arquivada.';
   END IF;
 
-  v_presented_hash := encode(digest(trim(p_token), 'sha256'), 'hex');
+  v_presented_hash := encode(extensions.digest(trim(p_token), 'sha256'), 'hex');
 
   SELECT id, expires_at, is_revoked INTO v_invite_record
   FROM public.invitations
@@ -251,7 +277,39 @@ BEGIN
 END;
 $$;
 
--- 7. PERMISSÕES DE EXECUÇÃO
+-- 7. BLINDAGEM DE TRIP_MEMBERS (proteção de role, profile_id, trip_id e couple_id)
+-- Utiliza IS DISTINCT FROM para tratar corretamente comparações com NULL
+CREATE OR REPLACE FUNCTION public.check_trip_member_update()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+BEGIN
+  IF NOT public.is_trip_admin(OLD.trip_id) THEN
+    IF NEW.role IS DISTINCT FROM OLD.role THEN
+      RAISE EXCEPTION 'Acesso negado: apenas a administradora pode alterar papéis de participantes.';
+    END IF;
+    IF NEW.profile_id IS DISTINCT FROM OLD.profile_id THEN
+      RAISE EXCEPTION 'Acesso negado: não é permitido alterar o usuário desta participação.';
+    END IF;
+    IF NEW.trip_id IS DISTINCT FROM OLD.trip_id THEN
+      RAISE EXCEPTION 'Acesso negado: não é permitido transferir o registro para outra viagem.';
+    END IF;
+    IF NEW.couple_id IS DISTINCT FROM OLD.couple_id THEN
+      RAISE EXCEPTION 'Acesso negado: apenas a administradora pode alterar o vínculo de casal.';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trigger_protect_trip_member_update ON public.trip_members;
+CREATE TRIGGER trigger_protect_trip_member_update
+  BEFORE UPDATE ON public.trip_members
+  FOR EACH ROW EXECUTE FUNCTION public.check_trip_member_update();
+
+-- 8. PERMISSÕES DE EXECUÇÃO
 REVOKE ALL ON FUNCTION public.get_or_create_trip_invite(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_or_create_trip_invite(UUID) TO authenticated;
 

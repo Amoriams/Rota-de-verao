@@ -75,9 +75,15 @@ export const Participants: React.FC = () => {
       setCouples(couplesData);
 
       // Carrega ou gera o token seguro de convite da viagem
+      // Se já existe convite ativo, token será null (o original não é armazenado)
+      // Nesse caso, a admin pode usar "Regenerar" para obter um novo token
       try {
         const invite = await memberService.getOrCreateTripInvite(trip.id);
-        setInviteToken(invite.token);
+        if (invite.token) {
+          setInviteToken(invite.token);
+        }
+        // Se invite.token é null, significa que já existe convite ativo
+        // mas o token original não é recuperável — admin precisa regenerar
         setIsInviteRevoked(false);
       } catch (err) {
         console.warn('Não foi possível carregar o token de convite:', err);
