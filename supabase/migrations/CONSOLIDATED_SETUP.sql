@@ -2,19 +2,20 @@
 -- ROTA DE VERÃO — Script SQL Consolidado de Configuração Inicial
 -- Arquivo: supabase/migrations/CONSOLIDATED_SETUP.sql
 -- 
--- Este script reúne de forma idempotente e segura:
--- 1. Migration 001: Schema completo, ENUMs, tabelas e RLS
--- 2. Migration 002: Multi-viagens e trigger on_trip_created
--- 3. Migration 004: Catálogo de passagens e veículos com status
--- 4. Migration 006: Convites seguros com tokens criptográficos
---    (Elimina a exigência de PIN e fecha a brecha da migration 005)
+-- Versão com Correção Definitiva de Segurança (Auditoria RLS & Hashing):
+-- 1. Profiles protegidos: cada usuário só vê a si e colegas das suas viagens
+-- 2. Hashing SHA-256 de tokens de convite: banco armazena apenas o hash
+-- 3. Blindagem de trip_members: trigger impede autopromoção a admin
+-- 4. Isolamento estrito de todas as tabelas: eliminação de USING (true)
+-- 5. Cadastro de casais seguro: sem violação de FK para acompanhantes sem conta
+-- 6. RPCs SECURITY DEFINER com search_path seguro e permissões estritas
 -- ============================================================
 
 -- ─────────────────────────────────────────────────────────────
 -- PARTE 1: EXTENSÕES
 -- ─────────────────────────────────────────────────────────────
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- ─────────────────────────────────────────────────────────────
 -- PARTE 2: TIPOS ENUMERADOS (Idempotentes)
@@ -104,7 +105,7 @@ CREATE TABLE IF NOT EXISTS public.trips (
   updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Garante que colunas adicionadas em migrações posteriores existam mesmo se a tabela já existia
+-- Defesa em profundidade para tabelas preexistentes
 ALTER TABLE public.trips 
   ADD COLUMN IF NOT EXISTS city VARCHAR(100),
   ADD COLUMN IF NOT EXISTS state VARCHAR(50),
@@ -133,27 +134,34 @@ CREATE TABLE IF NOT EXISTS public.trip_members (
 CREATE INDEX IF NOT EXISTS idx_trip_members_trip ON public.trip_members(trip_id);
 CREATE INDEX IF NOT EXISTS idx_trip_members_profile ON public.trip_members(profile_id);
 
--- 3.4. COUPLES — agrupamento de casais
+-- 3.4. COUPLES — agrupamento de casais (acompanhante pode ser convidado pendente sem conta)
 CREATE TABLE IF NOT EXISTS public.couples (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  trip_id     UUID NOT NULL REFERENCES public.trips(id) ON DELETE CASCADE,
-  label       VARCHAR(100) NOT NULL,
-  member_a_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  member_b_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  trip_id      UUID NOT NULL REFERENCES public.trips(id) ON DELETE CASCADE,
+  label        VARCHAR(100) NOT NULL,
+  member_a_id  UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  member_b_id  UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  partner_name VARCHAR(100),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-  CONSTRAINT couples_members_different CHECK (member_a_id <> member_b_id)
+  CONSTRAINT couples_members_different CHECK (member_b_id IS NULL OR member_a_id <> member_b_id)
 );
+
+-- Defesa em profundidade para tabelas preexistentes
+ALTER TABLE public.couples
+  ADD COLUMN IF NOT EXISTS partner_name VARCHAR(100);
+ALTER TABLE public.couples
+  ALTER COLUMN member_b_id DROP NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_couples_trip ON public.couples(trip_id);
 
--- 3.5. INVITATIONS — convites seguros com tokens criptográficos
+-- 3.5. INVITATIONS — convites seguros com hash SHA-256 (nunca em texto puro)
 CREATE TABLE IF NOT EXISTS public.invitations (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   trip_id         UUID NOT NULL REFERENCES public.trips(id) ON DELETE CASCADE,
   profile_id      UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
   pin_hash        TEXT,
-  token           TEXT NOT NULL UNIQUE,
+  token_hash      TEXT NOT NULL UNIQUE,
   expires_at      TIMESTAMPTZ NOT NULL,
   is_revoked      BOOLEAN NOT NULL DEFAULT false,
   attempt_count   INTEGER NOT NULL DEFAULT 0,
@@ -163,13 +171,15 @@ CREATE TABLE IF NOT EXISTS public.invitations (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_invitations_token ON public.invitations(token);
-CREATE INDEX IF NOT EXISTS idx_invitations_trip_token_active ON public.invitations(trip_id, token) WHERE is_revoked = false;
-
--- Garante compatibilidade caso a tabela já tenha sido criada com NOT NULL anteriormente
+-- Defesa em profundidade para tabelas preexistentes
+ALTER TABLE public.invitations
+  ADD COLUMN IF NOT EXISTS token_hash TEXT;
 ALTER TABLE public.invitations
   ALTER COLUMN profile_id DROP NOT NULL,
   ALTER COLUMN pin_hash DROP NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_invitations_token_hash ON public.invitations(token_hash);
+CREATE INDEX IF NOT EXISTS idx_invitations_trip_token_hash_active ON public.invitations(trip_id, token_hash) WHERE is_revoked = false;
 
 -- 3.6. FLIGHTS — catálogo de opções de passagens aéreas
 CREATE TABLE IF NOT EXISTS public.flights (
@@ -326,24 +336,24 @@ SELECT
   c.member_a_id AS member_a_id,
   c.member_b_id AS member_b_id,
   pa.full_name  AS member_a_name,
-  pb.full_name  AS member_b_name,
+  COALESCE(pb.full_name, c.partner_name, 'Acompanhante') AS member_b_name,
   pa.nickname   AS member_a_nickname,
   pb.nickname   AS member_b_nickname,
   pa.avatar_url AS member_a_avatar,
   pb.avatar_url AS member_b_avatar,
   tma.confirmation_status AS member_a_status,
-  tmb.confirmation_status AS member_b_status,
+  COALESCE(tmb.confirmation_status, 'pending'::public.confirmation_status) AS member_b_status,
   CASE
-    WHEN tma.confirmation_status = 'confirmed' AND tmb.confirmation_status = 'confirmed' THEN 'confirmed'
-    WHEN tma.confirmation_status = 'declined'  AND tmb.confirmation_status = 'declined'  THEN 'declined'
-    WHEN tma.confirmation_status = 'confirmed'  OR tmb.confirmation_status = 'confirmed' THEN 'partial'
+    WHEN tma.confirmation_status = 'confirmed' AND (c.member_b_id IS NULL OR tmb.confirmation_status = 'confirmed') THEN 'confirmed'
+    WHEN tma.confirmation_status = 'declined'  AND (c.member_b_id IS NULL OR tmb.confirmation_status = 'declined')  THEN 'declined'
+    WHEN tma.confirmation_status = 'confirmed' OR (tmb.confirmation_status IS NOT NULL AND tmb.confirmation_status = 'confirmed') THEN 'partial'
     ELSE 'pending'
   END AS couple_status
 FROM public.couples c
 JOIN public.profiles pa ON pa.id = c.member_a_id
-JOIN public.profiles pb ON pb.id = c.member_b_id
+LEFT JOIN public.profiles pb ON pb.id = c.member_b_id
 JOIN public.trip_members tma ON tma.trip_id = c.trip_id AND tma.profile_id = c.member_a_id
-JOIN public.trip_members tmb ON tmb.trip_id = c.trip_id AND tmb.profile_id = c.member_b_id;
+LEFT JOIN public.trip_members tmb ON tmb.trip_id = c.trip_id AND tmb.profile_id = c.member_b_id;
 
 -- ─────────────────────────────────────────────────────────────
 -- PARTE 5: FUNÇÕES DE AUTORIZAÇÃO E GATILHOS AUTOMÁTICOS
@@ -408,7 +418,7 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- Backfill automático: garante que usuários criados no Auth antes desta migração tenham perfil
+-- Backfill automático para contas já existentes no auth.users sem perfil
 INSERT INTO public.profiles (id, full_name, avatar_url)
 SELECT 
   u.id,
@@ -452,11 +462,44 @@ CREATE TRIGGER on_trip_created
   AFTER INSERT ON public.trips
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_trip();
 
+-- 5.5. BLINDAGEM DE TRIP_MEMBERS: impede participante comum de alterar role, profile_id ou trip_id
+CREATE OR REPLACE FUNCTION public.check_trip_member_update()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  -- Se quem está executando NÃO for o administrador daquela viagem:
+  IF NOT public.is_trip_admin(OLD.trip_id) THEN
+    -- Proíbe alterar o próprio papel (ex: virar admin)
+    IF NEW.role <> OLD.role THEN
+      RAISE EXCEPTION 'Acesso negado: apenas a administradora pode alterar papéis de participantes.';
+    END IF;
+    -- Proíbe mudar o usuário vinculado
+    IF NEW.profile_id <> OLD.profile_id THEN
+      RAISE EXCEPTION 'Acesso negado: não é permitido alterar o usuário desta participação.';
+    END IF;
+    -- Proíbe transferir a linha para outra viagem
+    IF NEW.trip_id <> OLD.trip_id THEN
+      RAISE EXCEPTION 'Acesso negado: não é permitido transferir o registro para outra viagem.';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trigger_protect_trip_member_update ON public.trip_members;
+CREATE TRIGGER trigger_protect_trip_member_update
+  BEFORE UPDATE ON public.trip_members
+  FOR EACH ROW EXECUTE FUNCTION public.check_trip_member_update();
+
 -- ─────────────────────────────────────────────────────────────
--- PARTE 6: CONVITES SEGUROS COM TOKENS (RPCs)
+-- PARTE 6: CONVITES SEGUROS COM HASH SHA-256 (RPCs)
 -- ─────────────────────────────────────────────────────────────
 
 -- 6.1. Obter ou gerar convite ativo para a viagem (apenas administradora)
+-- Retorna o token em texto puro SOMENTE no momento da geração
 CREATE OR REPLACE FUNCTION public.get_or_create_trip_invite(p_trip_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -467,7 +510,8 @@ DECLARE
   v_user_id UUID := auth.uid();
   v_is_admin BOOLEAN;
   v_invite_record RECORD;
-  v_new_token TEXT;
+  v_raw_token TEXT;
+  v_token_hash TEXT;
 BEGIN
   IF v_user_id IS NULL THEN
     RAISE EXCEPTION 'Usuário não autenticado.';
@@ -475,38 +519,29 @@ BEGIN
 
   v_is_admin := public.is_trip_admin(p_trip_id);
   IF NOT v_is_admin THEN
-    RAISE EXCEPTION 'Acesso negado: apenas a administradora desta viagem pode visualizar ou gerar links de convite.';
+    RAISE EXCEPTION 'Acesso negado: apenas a administradora desta viagem pode gerenciar convites.';
   END IF;
 
-  SELECT id, token, expires_at INTO v_invite_record
-  FROM public.invitations
-  WHERE trip_id = p_trip_id
-    AND profile_id IS NULL
-    AND is_revoked = false
-    AND expires_at > now()
-  ORDER BY created_at DESC
-  LIMIT 1;
+  -- Gera SEMPRE um novo token em texto puro se for solicitado pelo admin
+  -- e invalida o anterior para manter a integridade de hash único
+  v_raw_token := encode(gen_random_bytes(24), 'hex');
+  v_token_hash := encode(digest(v_raw_token, 'sha256'), 'hex');
 
-  IF v_invite_record.token IS NOT NULL THEN
-    RETURN jsonb_build_object(
-      'success', true,
-      'token', v_invite_record.token,
-      'expires_at', v_invite_record.expires_at,
-      'is_new', false
-    );
-  END IF;
+  -- Desativa tokens ativos anteriores
+  UPDATE public.invitations
+  SET is_revoked = true
+  WHERE trip_id = p_trip_id AND profile_id IS NULL AND is_revoked = false;
 
-  v_new_token := encode(gen_random_bytes(24), 'hex');
-
+  -- Armazena SOMENTE O HASH no banco de dados
   INSERT INTO public.invitations (
-    trip_id, profile_id, pin_hash, token, expires_at, is_revoked
+    trip_id, profile_id, pin_hash, token_hash, expires_at, is_revoked
   ) VALUES (
-    p_trip_id, NULL, NULL, v_new_token, now() + INTERVAL '90 days', false
+    p_trip_id, NULL, NULL, v_token_hash, now() + INTERVAL '90 days', false
   );
 
   RETURN jsonb_build_object(
     'success', true,
-    'token', v_new_token,
+    'token', v_raw_token,
     'expires_at', (now() + INTERVAL '90 days'),
     'is_new', true
   );
@@ -523,7 +558,8 @@ AS $$
 DECLARE
   v_user_id UUID := auth.uid();
   v_is_admin BOOLEAN;
-  v_new_token TEXT;
+  v_raw_token TEXT;
+  v_token_hash TEXT;
 BEGIN
   IF v_user_id IS NULL THEN
     RAISE EXCEPTION 'Usuário não autenticado.';
@@ -538,17 +574,18 @@ BEGIN
   SET is_revoked = true
   WHERE trip_id = p_trip_id AND profile_id IS NULL AND is_revoked = false;
 
-  v_new_token := encode(gen_random_bytes(24), 'hex');
+  v_raw_token := encode(gen_random_bytes(24), 'hex');
+  v_token_hash := encode(digest(v_raw_token, 'sha256'), 'hex');
 
   INSERT INTO public.invitations (
-    trip_id, profile_id, pin_hash, token, expires_at, is_revoked
+    trip_id, profile_id, pin_hash, token_hash, expires_at, is_revoked
   ) VALUES (
-    p_trip_id, NULL, NULL, v_new_token, now() + INTERVAL '90 days', false
+    p_trip_id, NULL, NULL, v_token_hash, now() + INTERVAL '90 days', false
   );
 
   RETURN jsonb_build_object(
     'success', true,
-    'token', v_new_token,
+    'token', v_raw_token,
     'expires_at', (now() + INTERVAL '90 days'),
     'message', 'Novo link gerado com sucesso. O link anterior foi revogado.'
   );
@@ -586,7 +623,7 @@ BEGIN
 END;
 $$;
 
--- 6.4. Aceitar convite exigindo TOKEN VÁLIDO e conta autenticada
+-- 6.4. Aceitar convite: compara o SHA-256 do token apresentado com o hash armazenado
 CREATE OR REPLACE FUNCTION public.accept_trip_invitation(
   p_trip_id UUID,
   p_token TEXT,
@@ -602,12 +639,11 @@ DECLARE
   v_user_id UUID := auth.uid();
   v_user_name TEXT;
   v_trip_exists BOOLEAN;
+  v_presented_hash TEXT;
   v_invite_record RECORD;
   v_existing_member_id UUID;
   v_member_id UUID;
   v_couple_id UUID := NULL;
-  v_partner_user_id UUID;
-  v_partner_member_id UUID;
 BEGIN
   -- 1. Exige autenticação
   IF v_user_id IS NULL THEN
@@ -629,11 +665,14 @@ BEGIN
     RAISE EXCEPTION 'A viagem informada não existe ou foi arquivada.';
   END IF;
 
-  -- 4. Valida legitimidade do token no banco
+  -- 4. Calcula o hash SHA-256 do token fornecido
+  v_presented_hash := encode(digest(trim(p_token), 'sha256'), 'hex');
+
+  -- 5. Valida contra o token_hash armazenado no banco
   SELECT id, expires_at, is_revoked INTO v_invite_record
   FROM public.invitations
   WHERE trip_id = p_trip_id 
-    AND token = trim(p_token)
+    AND token_hash = v_presented_hash
   ORDER BY created_at DESC
   LIMIT 1;
 
@@ -649,7 +688,7 @@ BEGIN
     RAISE EXCEPTION 'Este link de convite expirou.';
   END IF;
 
-  -- 5. Se já participa, retorna sucesso sem duplicar
+  -- 6. Se já participa, retorna sucesso sem duplicar
   SELECT id INTO v_existing_member_id
   FROM public.trip_members
   WHERE trip_id = p_trip_id AND profile_id = v_user_id;
@@ -663,40 +702,27 @@ BEGIN
     );
   END IF;
 
-  -- 6. Obtém nome do perfil
+  -- 7. Obtém nome do perfil
   SELECT full_name INTO v_user_name FROM public.profiles WHERE id = v_user_id;
   v_user_name := COALESCE(v_user_name, 'Participante');
 
-  -- 7. Tratamento de casal (opcional)
+  -- 8. Tratamento seguro de casal (SEM VIOLAR FK EM PROFILES E SEM CRIAR CONTAS FALSAS)
   IF p_is_couple AND p_partner_name IS NOT NULL AND length(trim(p_partner_name)) >= 2 THEN
-    v_partner_user_id := gen_random_uuid();
     v_couple_id := gen_random_uuid();
 
-    INSERT INTO public.profiles (id, full_name, avatar_url)
-    VALUES (
-      v_partner_user_id,
-      trim(p_partner_name),
-      'https://api.dicebear.com/7.x/bottts/svg?seed=' || encode(trim(p_partner_name)::bytea, 'hex')
-    );
-
-    INSERT INTO public.couples (id, trip_id, label, member_a_id, member_b_id)
+    -- Insere o casal registrando o nome do parceiro como acompanhante pendente (member_b_id = NULL)
+    INSERT INTO public.couples (id, trip_id, label, member_a_id, member_b_id, partner_name)
     VALUES (
       v_couple_id,
       p_trip_id,
       v_user_name || ' & ' || trim(p_partner_name),
       v_user_id,
-      v_partner_user_id
-    );
-
-    v_partner_member_id := gen_random_uuid();
-    INSERT INTO public.trip_members (
-      id, trip_id, profile_id, role, confirmation_status, couple_id
-    ) VALUES (
-      v_partner_member_id, p_trip_id, v_partner_user_id, 'member', 'pending', v_couple_id
+      NULL,
+      trim(p_partner_name)
     );
   END IF;
 
-  -- 8. Insere o participante autenticado como 'member' confirmado
+  -- 9. Insere o participante autenticado ESTRITAMENTE como 'member' confirmado
   v_member_id := gen_random_uuid();
   INSERT INTO public.trip_members (
     id, trip_id, profile_id, role, confirmation_status, couple_id, confirmed_at
@@ -704,7 +730,7 @@ BEGIN
     v_member_id, p_trip_id, v_user_id, 'member', 'confirmed', v_couple_id, now()
   );
 
-  -- 9. Incrementa métricas do convite
+  -- 10. Incrementa métricas de uso do convite
   UPDATE public.invitations
   SET last_used_at = now(),
       attempt_count = attempt_count + 1
@@ -737,18 +763,34 @@ GRANT EXECUTE ON FUNCTION public.accept_trip_invitation(UUID, TEXT, BOOLEAN, VAR
 -- PARTE 7: POLÍTICAS DE SEGURANÇA (ROW LEVEL SECURITY - RLS)
 -- ─────────────────────────────────────────────────────────────
 
--- 7.1. PROFILES
+-- 7.1. PROFILES: visível apenas para si próprio e para membros das mesmas viagens
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "profiles_select_all" ON public.profiles;
-CREATE POLICY "profiles_select_all"
+DROP POLICY IF EXISTS "profiles_select_scoped" ON public.profiles;
+CREATE POLICY "profiles_select_scoped"
   ON public.profiles FOR SELECT TO authenticated
-  USING (true);
+  USING (
+    id = auth.uid()
+    OR EXISTS (
+      SELECT 1 FROM public.trip_members tm_me
+      JOIN public.trip_members tm_other ON tm_other.trip_id = tm_me.trip_id
+      WHERE tm_me.profile_id = auth.uid()
+        AND tm_other.profile_id = public.profiles.id
+    )
+    OR EXISTS (
+      SELECT 1 FROM public.trips t
+      JOIN public.trip_members tm ON tm.trip_id = t.id
+      WHERE (t.created_by = auth.uid() AND tm.profile_id = public.profiles.id)
+         OR (tm.profile_id = auth.uid() AND t.created_by = public.profiles.id)
+    )
+  );
 
 DROP POLICY IF EXISTS "profiles_update_own" ON public.profiles;
 CREATE POLICY "profiles_update_own"
   ON public.profiles FOR UPDATE TO authenticated
-  USING (id = auth.uid());
+  USING (id = auth.uid())
+  WITH CHECK (id = auth.uid());
 
 DROP POLICY IF EXISTS "profiles_insert_own" ON public.profiles;
 CREATE POLICY "profiles_insert_own"
@@ -771,7 +813,8 @@ CREATE POLICY "trips_insert"
 DROP POLICY IF EXISTS "trips_update" ON public.trips;
 CREATE POLICY "trips_update"
   ON public.trips FOR UPDATE TO authenticated
-  USING (created_by = auth.uid() OR public.is_trip_admin(id));
+  USING (created_by = auth.uid() OR public.is_trip_admin(id))
+  WITH CHECK (created_by = auth.uid() OR public.is_trip_admin(id));
 
 DROP POLICY IF EXISTS "trips_delete" ON public.trips;
 CREATE POLICY "trips_delete"
@@ -794,12 +837,14 @@ CREATE POLICY "trip_members_insert_admin"
 DROP POLICY IF EXISTS "trip_members_update_admin" ON public.trip_members;
 CREATE POLICY "trip_members_update_admin"
   ON public.trip_members FOR UPDATE TO authenticated
-  USING (public.is_trip_admin(trip_id));
+  USING (public.is_trip_admin(trip_id))
+  WITH CHECK (public.is_trip_admin(trip_id));
 
 DROP POLICY IF EXISTS "trip_members_update_own_status" ON public.trip_members;
 CREATE POLICY "trip_members_update_own_status"
   ON public.trip_members FOR UPDATE TO authenticated
-  USING (profile_id = auth.uid());
+  USING (profile_id = auth.uid())
+  WITH CHECK (profile_id = auth.uid());
 
 DROP POLICY IF EXISTS "trip_members_delete_admin" ON public.trip_members;
 CREATE POLICY "trip_members_delete_admin"
@@ -817,15 +862,17 @@ CREATE POLICY "couples_select"
 DROP POLICY IF EXISTS "couples_manage_admin" ON public.couples;
 CREATE POLICY "couples_manage_admin"
   ON public.couples FOR ALL TO authenticated
-  USING (public.is_trip_admin(trip_id));
+  USING (public.is_trip_admin(trip_id))
+  WITH CHECK (public.is_trip_admin(trip_id));
 
--- 7.5. INVITATIONS
+-- 7.5. INVITATIONS: somente administradora da viagem
 ALTER TABLE public.invitations ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "invitations_admin_all" ON public.invitations;
 CREATE POLICY "invitations_admin_all"
   ON public.invitations FOR ALL TO authenticated
-  USING (public.is_trip_admin(trip_id));
+  USING (public.is_trip_admin(trip_id))
+  WITH CHECK (public.is_trip_admin(trip_id));
 
 -- 7.6. FLIGHTS
 ALTER TABLE public.flights ENABLE ROW LEVEL SECURITY;
@@ -838,7 +885,8 @@ CREATE POLICY "flights_select_members"
 DROP POLICY IF EXISTS "flights_all_admin" ON public.flights;
 CREATE POLICY "flights_all_admin"
   ON public.flights FOR ALL TO authenticated
-  USING (public.is_trip_admin(trip_id));
+  USING (public.is_trip_admin(trip_id))
+  WITH CHECK (public.is_trip_admin(trip_id));
 
 -- 7.7. VEHICLES
 ALTER TABLE public.vehicles ENABLE ROW LEVEL SECURITY;
@@ -851,80 +899,193 @@ CREATE POLICY "vehicles_select_members"
 DROP POLICY IF EXISTS "vehicles_all_admin" ON public.vehicles;
 CREATE POLICY "vehicles_all_admin"
   ON public.vehicles FOR ALL TO authenticated
-  USING (public.is_trip_admin(trip_id));
+  USING (public.is_trip_admin(trip_id))
+  WITH CHECK (public.is_trip_admin(trip_id));
 
 ALTER TABLE public.vehicle_interested_members ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "vehicle_interest_select" ON public.vehicle_interested_members;
 CREATE POLICY "vehicle_interest_select"
   ON public.vehicle_interested_members FOR SELECT TO authenticated
-  USING (true);
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.vehicles v 
+      WHERE v.id = vehicle_interested_members.vehicle_id 
+        AND (public.is_trip_member(v.trip_id) OR public.is_trip_admin(v.trip_id))
+    )
+  );
 
 DROP POLICY IF EXISTS "vehicle_interest_manage" ON public.vehicle_interested_members;
 CREATE POLICY "vehicle_interest_manage"
   ON public.vehicle_interested_members FOR ALL TO authenticated
-  USING (profile_id = auth.uid());
+  USING (
+    profile_id = auth.uid() 
+    AND EXISTS (
+      SELECT 1 FROM public.vehicles v 
+      WHERE v.id = vehicle_interested_members.vehicle_id 
+        AND public.is_trip_member(v.trip_id)
+    )
+  )
+  WITH CHECK (
+    profile_id = auth.uid() 
+    AND EXISTS (
+      SELECT 1 FROM public.vehicles v 
+      WHERE v.id = vehicle_interested_members.vehicle_id 
+        AND public.is_trip_member(v.trip_id)
+    )
+  );
 
--- 7.8. ACCOMMODATIONS, POLLS, EXPENSES
+-- 7.8. ACCOMMODATIONS
 ALTER TABLE public.accommodations ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "accommodations_select" ON public.accommodations;
-CREATE POLICY "accommodations_select" ON public.accommodations FOR SELECT TO authenticated
-  USING (public.is_trip_member(trip_id) OR public.is_trip_admin(trip_id));
-DROP POLICY IF EXISTS "accommodations_admin" ON public.accommodations;
-CREATE POLICY "accommodations_admin" ON public.accommodations FOR ALL TO authenticated
-  USING (public.is_trip_admin(trip_id));
 
-ALTER TABLE public.polls ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "polls_select" ON public.polls;
-CREATE POLICY "polls_select" ON public.polls FOR SELECT TO authenticated
+DROP POLICY IF EXISTS "accommodations_select" ON public.accommodations;
+CREATE POLICY "accommodations_select"
+  ON public.accommodations FOR SELECT TO authenticated
   USING (public.is_trip_member(trip_id) OR public.is_trip_admin(trip_id));
+
+DROP POLICY IF EXISTS "accommodations_admin" ON public.accommodations;
+CREATE POLICY "accommodations_admin"
+  ON public.accommodations FOR ALL TO authenticated
+  USING (public.is_trip_admin(trip_id))
+  WITH CHECK (public.is_trip_admin(trip_id));
+
+-- 7.9. POLLS & ENQUETES
+ALTER TABLE public.polls ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "polls_select" ON public.polls;
+CREATE POLICY "polls_select"
+  ON public.polls FOR SELECT TO authenticated
+  USING (public.is_trip_member(trip_id) OR public.is_trip_admin(trip_id));
+
 DROP POLICY IF EXISTS "polls_admin" ON public.polls;
-CREATE POLICY "polls_admin" ON public.polls FOR ALL TO authenticated
-  USING (public.is_trip_admin(trip_id));
+CREATE POLICY "polls_admin"
+  ON public.polls FOR ALL TO authenticated
+  USING (public.is_trip_admin(trip_id))
+  WITH CHECK (public.is_trip_admin(trip_id));
 
 ALTER TABLE public.poll_options ENABLE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS "poll_options_select" ON public.poll_options;
-CREATE POLICY "poll_options_select" ON public.poll_options FOR SELECT TO authenticated
-  USING (true);
+CREATE POLICY "poll_options_select"
+  ON public.poll_options FOR SELECT TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.polls p 
+      WHERE p.id = poll_options.poll_id 
+        AND (public.is_trip_member(p.trip_id) OR public.is_trip_admin(p.trip_id))
+    )
+  );
+
 DROP POLICY IF EXISTS "poll_options_admin" ON public.poll_options;
-CREATE POLICY "poll_options_admin" ON public.poll_options FOR ALL TO authenticated
-  USING (true);
+CREATE POLICY "poll_options_admin"
+  ON public.poll_options FOR ALL TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.polls p 
+      WHERE p.id = poll_options.poll_id 
+        AND public.is_trip_admin(p.trip_id)
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.polls p 
+      WHERE p.id = poll_options.poll_id 
+        AND public.is_trip_admin(p.trip_id)
+    )
+  );
 
 ALTER TABLE public.poll_votes ENABLE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS "poll_votes_select" ON public.poll_votes;
-CREATE POLICY "poll_votes_select" ON public.poll_votes FOR SELECT TO authenticated
-  USING (true);
+CREATE POLICY "poll_votes_select"
+  ON public.poll_votes FOR SELECT TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.polls p 
+      WHERE p.id = poll_votes.poll_id 
+        AND (public.is_trip_member(p.trip_id) OR public.is_trip_admin(p.trip_id))
+    )
+  );
+
 DROP POLICY IF EXISTS "poll_votes_insert" ON public.poll_votes;
-CREATE POLICY "poll_votes_insert" ON public.poll_votes FOR INSERT TO authenticated
-  WITH CHECK (profile_id = auth.uid());
+CREATE POLICY "poll_votes_insert"
+  ON public.poll_votes FOR INSERT TO authenticated
+  WITH CHECK (
+    profile_id = auth.uid() 
+    AND EXISTS (
+      SELECT 1 FROM public.polls p 
+      WHERE p.id = poll_votes.poll_id 
+        AND public.is_trip_member(p.trip_id)
+    )
+  );
+
 DROP POLICY IF EXISTS "poll_votes_delete" ON public.poll_votes;
-CREATE POLICY "poll_votes_delete" ON public.poll_votes FOR DELETE TO authenticated
+CREATE POLICY "poll_votes_delete"
+  ON public.poll_votes FOR DELETE TO authenticated
   USING (profile_id = auth.uid());
 
+-- 7.10. EXPENSES & RATEIO
 ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS "expenses_select" ON public.expenses;
-CREATE POLICY "expenses_select" ON public.expenses FOR SELECT TO authenticated
+CREATE POLICY "expenses_select"
+  ON public.expenses FOR SELECT TO authenticated
   USING (public.is_trip_member(trip_id) OR public.is_trip_admin(trip_id));
+
 DROP POLICY IF EXISTS "expenses_insert" ON public.expenses;
-CREATE POLICY "expenses_insert" ON public.expenses FOR INSERT TO authenticated
-  WITH CHECK (public.is_trip_member(trip_id) OR public.is_trip_admin(trip_id));
+CREATE POLICY "expenses_insert"
+  ON public.expenses FOR INSERT TO authenticated
+  WITH CHECK (
+    (public.is_trip_member(trip_id) OR public.is_trip_admin(trip_id))
+    AND payer_id = auth.uid()
+  );
+
 DROP POLICY IF EXISTS "expenses_admin" ON public.expenses;
-CREATE POLICY "expenses_admin" ON public.expenses FOR ALL TO authenticated
-  USING (public.is_trip_admin(trip_id) OR payer_id = auth.uid());
+CREATE POLICY "expenses_admin"
+  ON public.expenses FOR ALL TO authenticated
+  USING (public.is_trip_admin(trip_id) OR payer_id = auth.uid())
+  WITH CHECK (public.is_trip_admin(trip_id) OR payer_id = auth.uid());
 
 ALTER TABLE public.expense_splits ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "expense_splits_select" ON public.expense_splits;
-CREATE POLICY "expense_splits_select" ON public.expense_splits FOR SELECT TO authenticated
-  USING (true);
-DROP POLICY IF EXISTS "expense_splits_update_status" ON public.expense_splits;
-CREATE POLICY "expense_splits_update_status" ON public.expense_splits FOR UPDATE TO authenticated
-  USING (profile_id = auth.uid());
 
+DROP POLICY IF EXISTS "expense_splits_select" ON public.expense_splits;
+CREATE POLICY "expense_splits_select"
+  ON public.expense_splits FOR SELECT TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.expenses e 
+      WHERE e.id = expense_splits.expense_id 
+        AND (public.is_trip_member(e.trip_id) OR public.is_trip_admin(e.trip_id))
+    )
+  );
+
+DROP POLICY IF EXISTS "expense_splits_update_status" ON public.expense_splits;
+CREATE POLICY "expense_splits_update_status"
+  ON public.expense_splits FOR UPDATE TO authenticated
+  USING (
+    profile_id = auth.uid() 
+    OR EXISTS (
+      SELECT 1 FROM public.expenses e 
+      WHERE e.id = expense_splits.expense_id 
+        AND public.is_trip_admin(e.trip_id)
+    )
+  )
+  WITH CHECK (
+    profile_id = auth.uid() 
+    OR EXISTS (
+      SELECT 1 FROM public.expenses e 
+      WHERE e.id = expense_splits.expense_id 
+        AND public.is_trip_admin(e.trip_id)
+    )
+  );
+
+-- 7.11. ACTIVITY LOGS
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS "activity_logs_select" ON public.activity_logs;
-CREATE POLICY "activity_logs_select" ON public.activity_logs FOR SELECT TO authenticated
+CREATE POLICY "activity_logs_select"
+  ON public.activity_logs FOR SELECT TO authenticated
   USING (public.is_trip_member(trip_id) OR public.is_trip_admin(trip_id));
 
 -- Recarrega o cache do PostgREST imediatamente
 NOTIFY pgrst, 'reload schema';
-
