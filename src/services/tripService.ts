@@ -23,6 +23,19 @@ function saveLocalTrips(trips: Trip[]) {
   }
 }
 
+// Helper para formatar erros do PostgREST/Supabase de forma legível
+function formatSupabaseError(action: string, error: { message?: string; details?: string; hint?: string; code?: string }): Error {
+  const code = error.code ? `[${error.code}] ` : '';
+  const message = error.message || error.details || 'Falha na comunicação com o banco de dados.';
+  console.error(`Erro ao ${action} no Supabase: ${code}${message}`, {
+    code: error.code,
+    message: error.message,
+    details: error.details,
+    hint: error.hint,
+  });
+  return new Error(`${message}${error.hint ? ` (${error.hint})` : ''}`);
+}
+
 export const tripService = {
   /**
    * Lista todas as viagens acessíveis pelo usuário atual
@@ -45,8 +58,7 @@ export const tripService = {
     const { data, error } = await query;
 
     if (error) {
-      console.error('Erro ao buscar viagens do Supabase:', error);
-      throw error;
+      throw formatSupabaseError('buscar viagens', error);
     }
 
     return data || [];
@@ -70,8 +82,7 @@ export const tripService = {
       .maybeSingle();
 
     if (error) {
-      console.error('Erro ao buscar viagem por ID:', error);
-      throw error;
+      throw formatSupabaseError(`buscar viagem ${tripId}`, error);
     }
 
     return data;
@@ -139,8 +150,7 @@ export const tripService = {
       .single();
 
     if (error) {
-      console.error('Erro ao criar viagem no Supabase:', error);
-      throw error;
+      throw formatSupabaseError('criar viagem', error);
     }
 
     return data;
@@ -166,8 +176,7 @@ export const tripService = {
       .eq('id', tripId);
 
     if (error) {
-      console.error('Erro ao atualizar viagem:', error);
-      throw error;
+      throw formatSupabaseError(`atualizar viagem ${tripId}`, error);
     }
   },
 

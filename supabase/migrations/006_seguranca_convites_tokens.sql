@@ -354,3 +354,4 @@ GRANT EXECUTE ON FUNCTION public.accept_trip_invitation(UUID, TEXT, BOOLEAN, VAR
 
 COMMENT ON FUNCTION public.accept_trip_invitation(UUID, TEXT, BOOLEAN, VARCHAR) IS
   'Permite que um usuário autenticado ingresse na viagem via link de convite seguro com token obrigatório, com papel estrito de member.';
+
