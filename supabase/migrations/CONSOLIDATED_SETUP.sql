@@ -180,13 +180,44 @@ ALTER TABLE public.invitations
   ALTER COLUMN profile_id DROP NOT NULL,
   ALTER COLUMN pin_hash DROP NOT NULL;
 
+-- Tratamento de coluna legada "token" em texto puro (migração 001)
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'invitations'
+      AND column_name = 'token'
+  ) THEN
+    -- Remove NOT NULL para permitir novos inserts seguros sem plaintext
+    ALTER TABLE public.invitations ALTER COLUMN token DROP NOT NULL;
+    -- Remove constraint UNIQUE legada sobre token se existir
+    ALTER TABLE public.invitations DROP CONSTRAINT IF EXISTS invitations_token_key;
+    -- Neutraliza valores em texto puro de convites antigos para impedir vazamentos
+    UPDATE public.invitations SET token = NULL;
+  END IF;
+END $$;
+
 -- Revoga convites legados antigos sem token_hash para que não fiquem como convites zumbis
 UPDATE public.invitations
 SET is_revoked = true
 WHERE token_hash IS NULL;
 
--- Garante constraint UNIQUE em token_hash mesmo se a tabela veio de migração anterior
+-- Garante constraint UNIQUE em token_hash tratando possíveis duplicatas com segurança sem apagar dados
 DO $$ BEGIN
+  -- Se houver duplicatas de token_hash não nulas em bancos legados,
+  -- revoga as mais antigas e diferencia o hash com o ID para garantir unicidade sem exclusão
+  UPDATE public.invitations i
+  SET is_revoked = true,
+      token_hash = i.token_hash || '_dup_' || i.id::text
+  WHERE i.id IN (
+    SELECT id FROM (
+      SELECT id, ROW_NUMBER() OVER (PARTITION BY token_hash ORDER BY created_at DESC) as rn
+      FROM public.invitations
+      WHERE token_hash IS NOT NULL
+    ) sub
+    WHERE sub.rn > 1
+  );
+
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
     WHERE conrelid = 'public.invitations'::regclass
@@ -195,7 +226,7 @@ DO $$ BEGIN
   ) THEN
     BEGIN
       ALTER TABLE public.invitations ADD CONSTRAINT invitations_token_hash_unique UNIQUE (token_hash);
-    EXCEPTION WHEN duplicate_table THEN NULL;
+    EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
     END;
   END IF;
 END $$;
@@ -446,6 +477,8 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
+REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC;
+
 -- Backfill automático para contas já existentes no auth.users sem perfil
 INSERT INTO public.profiles (id, full_name, avatar_url)
 SELECT 
@@ -490,6 +523,8 @@ CREATE TRIGGER on_trip_created
   AFTER INSERT ON public.trips
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_trip();
 
+REVOKE ALL ON FUNCTION public.handle_new_trip() FROM PUBLIC;
+
 -- 5.5. BLINDAGEM DE TRIP_MEMBERS: impede participante comum de alterar role, profile_id, trip_id ou couple_id
 -- Utiliza IS DISTINCT FROM para tratar corretamente comparações com NULL
 CREATE OR REPLACE FUNCTION public.check_trip_member_update()
@@ -526,6 +561,8 @@ DROP TRIGGER IF EXISTS trigger_protect_trip_member_update ON public.trip_members
 CREATE TRIGGER trigger_protect_trip_member_update
   BEFORE UPDATE ON public.trip_members
   FOR EACH ROW EXECUTE FUNCTION public.check_trip_member_update();
+
+REVOKE ALL ON FUNCTION public.check_trip_member_update() FROM PUBLIC;
 
 -- ─────────────────────────────────────────────────────────────
 -- PARTE 6: CONVITES SEGUROS COM HASH SHA-256 (RPCs)
@@ -1166,7 +1203,10 @@ CREATE POLICY "activity_logs_select"
   ON public.activity_logs FOR SELECT TO authenticated
   USING (public.is_trip_member(trip_id) OR public.is_trip_admin(trip_id));
 
--- 7.12. LIMPEZA DE FUNÇÕES LEGADAS DO FLUXO DE PIN DESCONTINUADO
+-- 7.12. LIMPEZA DE FUNÇÕES LEGADAS DO FLUXO DE PIN E ASSINATURAS OBSOLETAS
+DROP FUNCTION IF EXISTS public.accept_trip_invitation(UUID, BOOLEAN, VARCHAR);
+DROP FUNCTION IF EXISTS public.accept_trip_invitation(UUID, BOOLEAN, TEXT);
+DROP FUNCTION IF EXISTS public.verify_invitation_pin(TEXT, TEXT, TEXT);
 DROP FUNCTION IF EXISTS public.join_trip_by_share_link(UUID, VARCHAR, VARCHAR, VARCHAR, VARCHAR, BOOLEAN, VARCHAR);
 DROP FUNCTION IF EXISTS public.join_trip_by_share_link(UUID, TEXT, TEXT, TEXT, TEXT, BOOLEAN, TEXT);
 DROP FUNCTION IF EXISTS public.generate_trip_pin();

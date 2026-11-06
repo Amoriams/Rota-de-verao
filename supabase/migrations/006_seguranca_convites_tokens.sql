@@ -16,10 +16,51 @@ ALTER TABLE public.invitations
   ALTER COLUMN profile_id DROP NOT NULL,
   ALTER COLUMN pin_hash DROP NOT NULL;
 
+-- Tratamento de coluna legada "token" em texto puro (migração 001)
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'invitations'
+      AND column_name = 'token'
+  ) THEN
+    ALTER TABLE public.invitations ALTER COLUMN token DROP NOT NULL;
+    ALTER TABLE public.invitations DROP CONSTRAINT IF EXISTS invitations_token_key;
+    UPDATE public.invitations SET token = NULL;
+  END IF;
+END $$;
+
 -- Revoga convites legados antigos sem token_hash para que não fiquem como convites zumbis
 UPDATE public.invitations
 SET is_revoked = true
 WHERE token_hash IS NULL;
+
+-- Garante constraint UNIQUE em token_hash tratando possíveis duplicatas com segurança sem apagar dados
+DO $$ BEGIN
+  UPDATE public.invitations i
+  SET is_revoked = true,
+      token_hash = i.token_hash || '_dup_' || i.id::text
+  WHERE i.id IN (
+    SELECT id FROM (
+      SELECT id, ROW_NUMBER() OVER (PARTITION BY token_hash ORDER BY created_at DESC) as rn
+      FROM public.invitations
+      WHERE token_hash IS NOT NULL
+    ) sub
+    WHERE sub.rn > 1
+  );
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.invitations'::regclass
+      AND contype = 'u'
+      AND conname LIKE '%token_hash%'
+  ) THEN
+    BEGIN
+      ALTER TABLE public.invitations ADD CONSTRAINT invitations_token_hash_unique UNIQUE (token_hash);
+    EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
+    END;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_invitations_token_hash ON public.invitations(token_hash);
 CREATE INDEX IF NOT EXISTS idx_invitations_trip_token_hash_active ON public.invitations(trip_id, token_hash) WHERE is_revoked = false;
@@ -327,3 +368,7 @@ GRANT EXECUTE ON FUNCTION public.revoke_trip_invite(UUID) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.accept_trip_invitation(UUID, TEXT, BOOLEAN, VARCHAR) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.accept_trip_invitation(UUID, TEXT, BOOLEAN, VARCHAR) TO authenticated;
+
+-- 9. LIMPEZA DE ASSINATURA OBSOLETA (migração 005 sem token)
+DROP FUNCTION IF EXISTS public.accept_trip_invitation(UUID, BOOLEAN, VARCHAR);
+DROP FUNCTION IF EXISTS public.accept_trip_invitation(UUID, BOOLEAN, TEXT);

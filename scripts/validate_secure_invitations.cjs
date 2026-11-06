@@ -639,6 +639,57 @@ assert(
   'JoinTrip.tsx trata e notifica especificamente usuários que já participam'
 );
 
+// 7.22. Neutralização segura de coluna legada "token" em texto puro
+assert(
+  consolidatedSql.includes("column_name = 'token'") && consolidatedSql.includes('UPDATE public.invitations SET token = NULL'),
+  'Coluna legada "token" em texto puro tem NOT NULL removido e valores neutralizados'
+);
+
+// 7.23. UNIQUE em token_hash com tratamento de duplicatas sem apagar dados
+assert(
+  consolidatedSql.includes('_dup_') && consolidatedSql.includes('PARTITION BY token_hash'),
+  'Duplicatas pré-existentes de token_hash são disambiguadas sem exclusão de dados'
+);
+
+// 7.24. Remoção da assinatura sobrecarregada vulnerável de accept_trip_invitation sem token
+assert(
+  consolidatedSql.includes('DROP FUNCTION IF EXISTS public.accept_trip_invitation(UUID, BOOLEAN, VARCHAR)'),
+  'Assinatura obsoleta de accept_trip_invitation sem token é explicitamente removida'
+);
+
+// 7.25. Ordem dos DROP POLICY: todas as tabelas existem antes de qualquer DROP POLICY
+const firstDropPolicyIdx = consolidatedSql.indexOf('DROP POLICY');
+const allTableNames = [
+  'profiles', 'trips', 'trip_members', 'couples', 'invitations',
+  'flights', 'vehicles', 'vehicle_interested_members', 'accommodations',
+  'polls', 'poll_options', 'poll_votes', 'expenses', 'expense_splits', 'activity_logs'
+];
+const allTablesCreatedBeforeDropPolicy = allTableNames.every((t) => {
+  const tableIdx = consolidatedSql.indexOf(`CREATE TABLE IF NOT EXISTS public.${t}`);
+  return tableIdx !== -1 && tableIdx < firstDropPolicyIdx;
+});
+assert(
+  allTablesCreatedBeforeDropPolicy,
+  'Todas as 15 tabelas são criadas ANTES de qualquer instrução DROP POLICY IF EXISTS'
+);
+
+// 7.26. Ausência total de DROP TABLE, TRUNCATE e DELETE FROM
+const hasDropTable = /DROP\s+TABLE/i.test(consolidatedSql);
+const hasTruncate = /TRUNCATE/i.test(consolidatedSql);
+const hasDeleteFrom = /DELETE\s+FROM/i.test(consolidatedSql);
+assert(
+  !hasDropTable && !hasTruncate && !hasDeleteFrom,
+  'Zero ocorrências de DROP TABLE, TRUNCATE ou DELETE FROM no script consolidado'
+);
+
+// 7.27. Revogação de privilégios de trigger functions de PUBLIC
+assert(
+  consolidatedSql.includes('REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC') &&
+  consolidatedSql.includes('REVOKE ALL ON FUNCTION public.handle_new_trip() FROM PUBLIC') &&
+  consolidatedSql.includes('REVOKE ALL ON FUNCTION public.check_trip_member_update() FROM PUBLIC'),
+  'Funções de trigger têm privilégios explicitamente revogados de PUBLIC'
+);
+
 // ═══════════════════════════════════════════════════════════════════
 // RESULTADO FINAL
 // ═══════════════════════════════════════════════════════════════════
