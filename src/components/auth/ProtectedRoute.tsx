@@ -12,32 +12,31 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   children,
   requireAdmin = false,
 }) => {
-  const { isAuthenticated, isLoading, isConfigured, role } = useAuth();
+  const { isAuthenticated, isLoading, role } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-700">
-        <div className="w-14 h-14 rounded-2xl bg-cyan-500/10 text-cyan-600 flex items-center justify-center animate-bounce mb-4 shadow-sm">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-tropical-bg text-tropical-text">
+        <div className="w-14 h-14 rounded-2xl bg-tropical-turquoise/15 text-tropical-ocean flex items-center justify-center animate-bounce mb-4 shadow-sm">
           <Palmtree className="w-8 h-8" />
         </div>
-        <p className="font-display font-medium text-sm text-slate-600">
-          Carregando a viagem... 🌊
+        <p className="font-display font-medium text-sm text-tropical-text-muted">
+          Carregando a Rota de Verão... 🌊
         </p>
       </div>
     );
   }
 
-  // Se o Supabase estiver configurado e o usuário não estiver autenticado, vai para o login
-  if (isConfigured && !isAuthenticated) {
+  // Redireciona para o login caso o usuário não esteja autenticado
+  if (!isAuthenticated) {
     return <Navigate to="/entrar" state={{ from: location }} replace />;
   }
 
   // Se requer papel de Administradora e o usuário não for admin
   if (requireAdmin && role !== 'admin') {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;
 };
-

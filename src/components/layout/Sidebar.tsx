@@ -29,7 +29,7 @@ const navItems = [
   { label: 'Votações',        to: '/enquetes',        icon: Vote,          adminOnly: false },
   { label: 'Despesas',        to: '/financeiro',      icon: Receipt,       adminOnly: false },
   { label: 'Meu Perfil',      to: '/perfil',          icon: User,          adminOnly: false },
-  { label: 'Minhas Viagens',  to: '/minhas-viagens',  icon: Map,           adminOnly: true  },
+  { label: 'Minhas Viagens',  to: '/',                icon: Map,           adminOnly: false },
   { label: 'Configurações',   to: '/administracao',   icon: Settings,      adminOnly: true  },
 ];
 

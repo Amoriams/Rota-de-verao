@@ -3,6 +3,8 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Profile, TripMember, UserRole } from '../@types/database.types';
 
+const DEMO_AUTH_KEY = 'rota_de_verao_demo_auth';
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -16,7 +18,6 @@ interface AuthContextType {
   loginWithPin: (pin: string) => Promise<{ error: Error | null }>;
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
   logout: () => Promise<void>;
-  // Alternador para modo demo quando offline ou sem chaves configuradas
   setDemoRole: (role: UserRole) => void;
 }
 
@@ -29,6 +30,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [member, setMember] = useState<TripMember | null>(null);
   const [demoRole, setDemoRole] = useState<UserRole>('admin');
   const [isLoading, setIsLoading] = useState(true);
+
+  // Controle de autenticação em modo demo / local
+  const [isDemoAuthenticated, setIsDemoAuthenticated] = useState<boolean>(() => {
+    return sessionStorage.getItem(DEMO_AUTH_KEY) === 'true';
+  });
 
   // Carrega perfil e vínculo de viagem do usuário
   const fetchUserData = async (userId: string) => {
@@ -95,6 +101,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loginWithEmail = async (email: string, password: string) => {
     setIsLoading(true);
+    if (!isSupabaseConfigured) {
+      sessionStorage.setItem(DEMO_AUTH_KEY, 'true');
+      setIsDemoAuthenticated(true);
+      setIsLoading(false);
+      return { error: null };
+    }
+
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -106,8 +119,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Login simplificado por PIN
   const loginWithPin = async (pin: string) => {
     setIsLoading(true);
+    if (!isSupabaseConfigured) {
+      sessionStorage.setItem(DEMO_AUTH_KEY, 'true');
+      setIsDemoAuthenticated(true);
+      setIsLoading(false);
+      return { error: null };
+    }
+
     try {
-      // Caso a Edge Function `verify-pin` esteja configurada
       const { data, error } = await supabase.functions.invoke('verify-pin', {
         body: { pin },
       });
@@ -164,6 +183,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isSupabaseConfigured) {
       await supabase.auth.signOut();
     }
+    sessionStorage.removeItem(DEMO_AUTH_KEY);
+    setIsDemoAuthenticated(false);
     setUser(null);
     setSession(null);
     setProfile(null);
@@ -174,6 +195,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     ? (member?.role ?? (user ? 'member' : demoRole))
     : demoRole;
 
+  // Garante que o login é obrigatório em qualquer ambiente
+  const isAuthenticated = isSupabaseConfigured ? Boolean(user) : isDemoAuthenticated;
+
   return (
     <AuthContext.Provider
       value={{
@@ -182,7 +206,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         profile,
         member,
         role: currentRole,
-        isAuthenticated: isSupabaseConfigured ? Boolean(user) : true,
+        isAuthenticated,
         isLoading,
         isConfigured: isSupabaseConfigured,
         loginWithEmail,
@@ -204,4 +228,3 @@ export const useAuth = () => {
   }
   return context;
 };
-

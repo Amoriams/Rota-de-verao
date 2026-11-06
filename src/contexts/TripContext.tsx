@@ -7,7 +7,11 @@ interface TripContextType {
   trips: Trip[];
   activeTrips: Trip[];
   archivedTrips: Trip[];
+  myCreatedTrips: Trip[];
+  myInvitedTrips: Trip[];
   currentTrip: Trip | null;
+  isCurrentTripAdmin: boolean;
+  currentTripRole: 'admin' | 'member';
   isLoading: boolean;
   selectTrip: (tripId: string) => void;
   createTrip: (data: Partial<Trip>) => Promise<Trip>;
@@ -33,6 +37,18 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const activeTrips = useMemo(() => trips.filter((t) => !t.is_archived), [trips]);
   const archivedTrips = useMemo(() => trips.filter((t) => Boolean(t.is_archived)), [trips]);
 
+  // Viagens criadas pelo usuário (onde ele é o proprietário / administradora)
+  const myCreatedTrips = useMemo(() => {
+    if (!user) return activeTrips;
+    return activeTrips.filter((t) => t.created_by === user.id);
+  }, [activeTrips, user]);
+
+  // Viagens onde o usuário é participante convidado (criadas por outra pessoa)
+  const myInvitedTrips = useMemo(() => {
+    if (!user) return [];
+    return activeTrips.filter((t) => t.created_by !== user.id);
+  }, [activeTrips, user]);
+
   const currentTrip = useMemo(() => {
     if (!currentTripId) {
       return activeTrips.length > 0 ? activeTrips[0] : null;
@@ -41,6 +57,15 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (found) return found;
     return activeTrips.length > 0 ? activeTrips[0] : null;
   }, [trips, currentTripId, activeTrips]);
+
+  // Define se o usuário atual é o administrador da viagem selecionada
+  const isCurrentTripAdmin = useMemo(() => {
+    if (!currentTrip) return false;
+    if (!user) return true; // fallback demo
+    return currentTrip.created_by === user.id;
+  }, [currentTrip, user]);
+
+  const currentTripRole: 'admin' | 'member' = isCurrentTripAdmin ? 'admin' : 'member';
 
   const refreshTrips = useCallback(async () => {
     setIsLoading(true);
@@ -124,7 +149,11 @@ export const TripProvider: React.FC<{ children: React.ReactNode }> = ({ children
         trips,
         activeTrips,
         archivedTrips,
+        myCreatedTrips,
+        myInvitedTrips,
         currentTrip,
+        isCurrentTripAdmin,
+        currentTripRole,
         isLoading,
         selectTrip,
         createTrip,
@@ -147,4 +176,3 @@ export const useTrip = () => {
   }
   return context;
 };
-
