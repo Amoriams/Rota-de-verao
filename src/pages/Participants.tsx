@@ -75,15 +75,22 @@ export const Participants: React.FC = () => {
       setCouples(couplesData);
 
       // Carrega ou gera o token seguro de convite da viagem
-      // Se já existe convite ativo, token será null (o original não é armazenado)
-      // Nesse caso, a admin pode usar "Regenerar" para obter um novo token
+      // Se já existe convite ativo, token será null (o original não é armazenado no banco)
+      // Recupera do cache da sessão local ou permite à admin regenerar quando necessário
       try {
         const invite = await memberService.getOrCreateTripInvite(trip.id);
         if (invite.token) {
           setInviteToken(invite.token);
+          sessionStorage.setItem(`rota_trip_token_${trip.id}`, invite.token);
+        } else {
+          // Token nulo: o convite já existe e está ativo no banco
+          const cachedToken = sessionStorage.getItem(`rota_trip_token_${trip.id}`);
+          if (cachedToken) {
+            setInviteToken(cachedToken);
+          } else {
+            setInviteToken(null);
+          }
         }
-        // Se invite.token é null, significa que já existe convite ativo
-        // mas o token original não é recuperável — admin precisa regenerar
         setIsInviteRevoked(false);
       } catch (err) {
         console.warn('Não foi possível carregar o token de convite:', err);
@@ -111,8 +118,22 @@ export const Participants: React.FC = () => {
   const handleCopyShareLink = async () => {
     if (!tripId) return;
 
-    if (isInviteRevoked || !inviteToken) {
-      alert('Os convites para esta viagem estão revogados ou inativos. Como administradora, gere um novo link para convidar participantes.');
+    if (isInviteRevoked) {
+      alert('Os convites para esta viagem estão desativados. Como administradora, use o botão de regenerar para ativar um novo link.');
+      return;
+    }
+
+    if (!inviteToken) {
+      if (isAdmin) {
+        const confirmGenerate = window.confirm(
+          'O link de convite desta viagem está ativo, mas por segurança seu código confidencial não fica gravado em texto puro no banco. Deseja gerar/copiar um novo link agora?'
+        );
+        if (confirmGenerate) {
+          await handleRegenerateInvite();
+        }
+      } else {
+        alert('Apenas a administradora da viagem pode visualizar ou gerar o link seguro de convite.');
+      }
       return;
     }
 
@@ -125,18 +146,22 @@ export const Participants: React.FC = () => {
   // Regeneração do link seguro de convite (apenas administradora)
   const handleRegenerateInvite = async () => {
     if (!tripId || !isAdmin) return;
-    const confirmRegenerate = window.confirm(
-      'Deseja gerar um novo link de convite? O link anterior deixará de funcionar imediatamente.'
-    );
-    if (!confirmRegenerate) return;
 
     try {
       setIsManagingInvite(true);
       const res = await memberService.regenerateTripInvite(tripId);
       setInviteToken(res.token);
+      sessionStorage.setItem(`rota_trip_token_${tripId}`, res.token);
       setIsInviteRevoked(false);
+
+      // Copia automaticamente para a área de transferência
+      const shareUrl = `${window.location.origin}/convite/${tripId}?token=${res.token}`;
+      navigator.clipboard?.writeText?.(shareUrl);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2500);
+
       setFeedbackMsg({
-        text: 'Novo link de convite gerado com sucesso! O link anterior foi revogado.',
+        text: 'Novo link de convite gerado e copiado para a área de transferência!',
         type: 'success',
       });
       setTimeout(() => setFeedbackMsg(null), 4000);
@@ -163,6 +188,8 @@ export const Participants: React.FC = () => {
     try {
       setIsManagingInvite(true);
       await memberService.revokeTripInvite(tripId);
+      setInviteToken(null);
+      sessionStorage.removeItem(`rota_trip_token_${tripId}`);
       setIsInviteRevoked(true);
       setFeedbackMsg({
         text: 'Convites desativados. Os links anteriores não concederão mais acesso.',

@@ -41,6 +41,7 @@ export const JoinTrip: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [successJoin, setSuccessJoin] = useState(false);
+  const [isAlreadyMember, setIsAlreadyMember] = useState(false);
 
   useEffect(() => {
     const fetchTrip = async () => {
@@ -108,7 +109,7 @@ export const JoinTrip: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      await memberService.acceptTripInvitation({
+      const res = await memberService.acceptTripInvitation({
         tripId,
         token: token.trim(),
         isCouple,
@@ -124,6 +125,9 @@ export const JoinTrip: React.FC = () => {
       selectTrip(trip.id);
       await refreshTrips();
 
+      if (res.alreadyMember) {
+        setIsAlreadyMember(true);
+      }
       setSuccessJoin(true);
       setTimeout(() => {
         navigate('/dashboard');
@@ -211,7 +215,7 @@ export const JoinTrip: React.FC = () => {
           {successJoin && (
             <div className="flex items-center gap-2.5 p-3.5 rounded-2xl bg-tropical-palm-50 border border-tropical-palm/30 text-tropical-palm text-xs font-semibold animate-fade-in">
               <CheckCircle2 className="w-4 h-4 shrink-0 text-tropical-palm" />
-              <span>Presença confirmada! Redirecionando para a viagem... 🌴</span>
+              <span>{isAlreadyMember ? 'Você já participa desta viagem! Redirecionando para a praia... 🌴' : 'Presença confirmada! Redirecionando para a viagem... 🌴'}</span>
             </div>
           )}
 

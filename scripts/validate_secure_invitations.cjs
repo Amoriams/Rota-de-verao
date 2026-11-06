@@ -609,6 +609,36 @@ assert(
   'Constraint UNIQUE para token_hash criada de forma idempotente'
 );
 
+// 7.18. Revogação de convites legados sem token_hash
+assert(
+  consolidatedSql.includes('SET is_revoked = true') && consolidatedSql.includes('WHERE token_hash IS NULL'),
+  'Convites legados sem token_hash são revogados automaticamente'
+);
+
+// 7.19. get_or_create_trip_invite exige token_hash IS NOT NULL
+assert(
+  getOrCreateSql.includes('token_hash IS NOT NULL'),
+  'get_or_create_trip_invite ignora registros zumbis sem token_hash'
+);
+
+// 7.20. Limpeza de funções legadas do PIN
+assert(
+  consolidatedSql.includes('DROP FUNCTION IF EXISTS public.join_trip_by_share_link'),
+  'Funções legadas de PIN são removidas para eliminar superfície de ataque'
+);
+
+// 7.21. Frontend — Cache de sessão e feedback de alreadyMember
+const participantsTsx = fs.readFileSync(path.join(basePath, 'src/pages/Participants.tsx'), 'utf8');
+const joinTripTsx = fs.readFileSync(path.join(basePath, 'src/pages/JoinTrip.tsx'), 'utf8');
+assert(
+  participantsTsx.includes('sessionStorage.getItem(`rota_trip_token_'),
+  'Participants.tsx utiliza cache de sessão para preservar token entre recargas'
+);
+assert(
+  joinTripTsx.includes('isAlreadyMember') && joinTripTsx.includes('Você já participa desta viagem'),
+  'JoinTrip.tsx trata e notifica especificamente usuários que já participam'
+);
+
 // ═══════════════════════════════════════════════════════════════════
 // RESULTADO FINAL
 // ═══════════════════════════════════════════════════════════════════

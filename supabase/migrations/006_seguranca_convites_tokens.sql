@@ -16,6 +16,11 @@ ALTER TABLE public.invitations
   ALTER COLUMN profile_id DROP NOT NULL,
   ALTER COLUMN pin_hash DROP NOT NULL;
 
+-- Revoga convites legados antigos sem token_hash para que não fiquem como convites zumbis
+UPDATE public.invitations
+SET is_revoked = true
+WHERE token_hash IS NULL;
+
 CREATE INDEX IF NOT EXISTS idx_invitations_token_hash ON public.invitations(token_hash);
 CREATE INDEX IF NOT EXISTS idx_invitations_trip_token_hash_active ON public.invitations(trip_id, token_hash) WHERE is_revoked = false;
 
@@ -56,6 +61,7 @@ BEGIN
   FROM public.invitations
   WHERE trip_id = p_trip_id
     AND profile_id IS NULL
+    AND token_hash IS NOT NULL
     AND is_revoked = false
     AND expires_at > now()
   ORDER BY created_at DESC

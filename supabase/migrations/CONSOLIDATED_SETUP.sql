@@ -180,6 +180,11 @@ ALTER TABLE public.invitations
   ALTER COLUMN profile_id DROP NOT NULL,
   ALTER COLUMN pin_hash DROP NOT NULL;
 
+-- Revoga convites legados antigos sem token_hash para que não fiquem como convites zumbis
+UPDATE public.invitations
+SET is_revoked = true
+WHERE token_hash IS NULL;
+
 -- Garante constraint UNIQUE em token_hash mesmo se a tabela veio de migração anterior
 DO $$ BEGIN
   IF NOT EXISTS (
@@ -361,7 +366,7 @@ SELECT
   tma.confirmation_status AS member_a_status,
   COALESCE(tmb.confirmation_status, 'pending'::public.confirmation_status) AS member_b_status,
   CASE
-    WHEN tma.confirmation_status = 'confirmed' AND (c.member_b_id IS NULL OR tmb.confirmation_status = 'confirmed') THEN 'confirmed'
+    WHEN tma.confirmation_status = 'confirmed' AND tmb.confirmation_status = 'confirmed' THEN 'confirmed'
     WHEN tma.confirmation_status = 'declined'  AND (c.member_b_id IS NULL OR tmb.confirmation_status = 'declined')  THEN 'declined'
     WHEN tma.confirmation_status = 'confirmed' OR (tmb.confirmation_status IS NOT NULL AND tmb.confirmation_status = 'confirmed') THEN 'partial'
     ELSE 'pending'
@@ -558,6 +563,7 @@ BEGIN
   FROM public.invitations
   WHERE trip_id = p_trip_id
     AND profile_id IS NULL
+    AND token_hash IS NOT NULL
     AND is_revoked = false
     AND expires_at > now()
   ORDER BY created_at DESC
@@ -812,6 +818,7 @@ GRANT EXECUTE ON FUNCTION public.accept_trip_invitation(UUID, TEXT, BOOLEAN, VAR
 -- 7.1. PROFILES: visível apenas para si próprio e para membros das mesmas viagens
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "profiles_select" ON public.profiles;
 DROP POLICY IF EXISTS "profiles_select_all" ON public.profiles;
 DROP POLICY IF EXISTS "profiles_select_scoped" ON public.profiles;
 CREATE POLICY "profiles_select_scoped"
@@ -846,6 +853,8 @@ CREATE POLICY "profiles_insert_own"
 -- 7.2. TRIPS
 ALTER TABLE public.trips ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "trips_select_member" ON public.trips;
+DROP POLICY IF EXISTS "trips_update_admin" ON public.trips;
 DROP POLICY IF EXISTS "trips_select" ON public.trips;
 CREATE POLICY "trips_select"
   ON public.trips FOR SELECT TO authenticated
@@ -870,6 +879,7 @@ CREATE POLICY "trips_delete"
 -- 7.3. TRIP_MEMBERS
 ALTER TABLE public.trip_members ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "trip_members_all_admin" ON public.trip_members;
 DROP POLICY IF EXISTS "trip_members_select" ON public.trip_members;
 CREATE POLICY "trip_members_select"
   ON public.trip_members FOR SELECT TO authenticated
@@ -900,6 +910,8 @@ CREATE POLICY "trip_members_delete_admin"
 -- 7.4. COUPLES
 ALTER TABLE public.couples ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "couples_select_member" ON public.couples;
+DROP POLICY IF EXISTS "couples_all_admin" ON public.couples;
 DROP POLICY IF EXISTS "couples_select" ON public.couples;
 CREATE POLICY "couples_select"
   ON public.couples FOR SELECT TO authenticated
@@ -914,6 +926,7 @@ CREATE POLICY "couples_manage_admin"
 -- 7.5. INVITATIONS: somente administradora da viagem
 ALTER TABLE public.invitations ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "invitations_all_admin" ON public.invitations;
 DROP POLICY IF EXISTS "invitations_admin_all" ON public.invitations;
 CREATE POLICY "invitations_admin_all"
   ON public.invitations FOR ALL TO authenticated
@@ -923,6 +936,7 @@ CREATE POLICY "invitations_admin_all"
 -- 7.6. FLIGHTS
 ALTER TABLE public.flights ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "flights_select_member" ON public.flights;
 DROP POLICY IF EXISTS "flights_select_members" ON public.flights;
 CREATE POLICY "flights_select_members"
   ON public.flights FOR SELECT TO authenticated
@@ -937,6 +951,7 @@ CREATE POLICY "flights_all_admin"
 -- 7.7. VEHICLES
 ALTER TABLE public.vehicles ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "vehicles_select_member" ON public.vehicles;
 DROP POLICY IF EXISTS "vehicles_select_members" ON public.vehicles;
 CREATE POLICY "vehicles_select_members"
   ON public.vehicles FOR SELECT TO authenticated
@@ -950,6 +965,9 @@ CREATE POLICY "vehicles_all_admin"
 
 ALTER TABLE public.vehicle_interested_members ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "vehicle_interests_select_member" ON public.vehicle_interested_members;
+DROP POLICY IF EXISTS "vehicle_interests_insert_confirmed" ON public.vehicle_interested_members;
+DROP POLICY IF EXISTS "vehicle_interests_delete_own" ON public.vehicle_interested_members;
 DROP POLICY IF EXISTS "vehicle_interest_select" ON public.vehicle_interested_members;
 CREATE POLICY "vehicle_interest_select"
   ON public.vehicle_interested_members FOR SELECT TO authenticated
@@ -984,6 +1002,8 @@ CREATE POLICY "vehicle_interest_manage"
 -- 7.8. ACCOMMODATIONS
 ALTER TABLE public.accommodations ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "accommodations_select_member" ON public.accommodations;
+DROP POLICY IF EXISTS "accommodations_all_admin" ON public.accommodations;
 DROP POLICY IF EXISTS "accommodations_select" ON public.accommodations;
 CREATE POLICY "accommodations_select"
   ON public.accommodations FOR SELECT TO authenticated
@@ -998,6 +1018,8 @@ CREATE POLICY "accommodations_admin"
 -- 7.9. POLLS & ENQUETES
 ALTER TABLE public.polls ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "polls_select_member" ON public.polls;
+DROP POLICY IF EXISTS "polls_all_admin" ON public.polls;
 DROP POLICY IF EXISTS "polls_select" ON public.polls;
 CREATE POLICY "polls_select"
   ON public.polls FOR SELECT TO authenticated
@@ -1011,6 +1033,8 @@ CREATE POLICY "polls_admin"
 
 ALTER TABLE public.poll_options ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "poll_options_select_member" ON public.poll_options;
+DROP POLICY IF EXISTS "poll_options_all_admin" ON public.poll_options;
 DROP POLICY IF EXISTS "poll_options_select" ON public.poll_options;
 CREATE POLICY "poll_options_select"
   ON public.poll_options FOR SELECT TO authenticated
@@ -1042,6 +1066,9 @@ CREATE POLICY "poll_options_admin"
 
 ALTER TABLE public.poll_votes ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "poll_votes_select_member" ON public.poll_votes;
+DROP POLICY IF EXISTS "poll_votes_insert_own_confirmed" ON public.poll_votes;
+DROP POLICY IF EXISTS "poll_votes_update_own_if_allowed" ON public.poll_votes;
 DROP POLICY IF EXISTS "poll_votes_select" ON public.poll_votes;
 CREATE POLICY "poll_votes_select"
   ON public.poll_votes FOR SELECT TO authenticated
@@ -1073,6 +1100,8 @@ CREATE POLICY "poll_votes_delete"
 -- 7.10. EXPENSES & RATEIO
 ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "cost_items_select_member" ON public.expenses;
+DROP POLICY IF EXISTS "cost_items_all_admin" ON public.expenses;
 DROP POLICY IF EXISTS "expenses_select" ON public.expenses;
 CREATE POLICY "expenses_select"
   ON public.expenses FOR SELECT TO authenticated
@@ -1094,6 +1123,8 @@ CREATE POLICY "expenses_admin"
 
 ALTER TABLE public.expense_splits ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "cost_participants_select" ON public.expense_splits;
+DROP POLICY IF EXISTS "cost_participants_all_admin" ON public.expense_splits;
 DROP POLICY IF EXISTS "expense_splits_select" ON public.expense_splits;
 CREATE POLICY "expense_splits_select"
   ON public.expense_splits FOR SELECT TO authenticated
@@ -1128,10 +1159,19 @@ CREATE POLICY "expense_splits_update_status"
 -- 7.11. ACTIVITY LOGS
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "activity_logs_select_admin" ON public.activity_logs;
+DROP POLICY IF EXISTS "activity_logs_insert_member" ON public.activity_logs;
 DROP POLICY IF EXISTS "activity_logs_select" ON public.activity_logs;
 CREATE POLICY "activity_logs_select"
   ON public.activity_logs FOR SELECT TO authenticated
   USING (public.is_trip_member(trip_id) OR public.is_trip_admin(trip_id));
+
+-- 7.12. LIMPEZA DE FUNÇÕES LEGADAS DO FLUXO DE PIN DESCONTINUADO
+DROP FUNCTION IF EXISTS public.join_trip_by_share_link(UUID, VARCHAR, VARCHAR, VARCHAR, VARCHAR, BOOLEAN, VARCHAR);
+DROP FUNCTION IF EXISTS public.join_trip_by_share_link(UUID, TEXT, TEXT, TEXT, TEXT, BOOLEAN, TEXT);
+DROP FUNCTION IF EXISTS public.generate_trip_pin();
+DROP FUNCTION IF EXISTS public.hash_pin(TEXT);
+DROP FUNCTION IF EXISTS public.verify_trip_pin(UUID, TEXT);
 
 -- Recarrega o cache do PostgREST imediatamente
 NOTIFY pgrst, 'reload schema';
