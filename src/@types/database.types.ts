@@ -14,6 +14,7 @@ export type PollCategory = 'accommodation' | 'vehicle' | 'tour' | 'restaurant' |
 export type NotificationType = 'poll_created' | 'trip_updated' | 'price_alert' | 'expense_added' | 'system';
 export type FlightType = 'ida' | 'volta';
 export type CoupleStatus = 'confirmed' | 'declined' | 'partial' | 'pending';
+export type CatalogOptionStatus = 'in_analysis' | 'favorite' | 'chosen' | 'booked' | 'discarded';
 
 // ─── TABELAS (tipos das linhas do banco como type aliases) ────
 
@@ -109,7 +110,15 @@ export type Flight = {
   baggage_included: boolean;
   purchase_url: string | null;
   type: FlightType;
+  status: CatalogOptionStatus;
+  connections_count: number;
+  notes: string | null;
+  price_updated_at: string;
+  return_departure_time?: string | null;
+  return_arrival_time?: string | null;
+  created_by?: string | null;
   created_at: string;
+  updated_at?: string;
 };
 
 export type Vehicle = {
@@ -127,7 +136,16 @@ export type Vehicle = {
   rental_company: string | null;
   external_url: string | null;
   image_url: string | null;
+  status: CatalogOptionStatus;
+  pickup_time?: string | null;
+  return_time?: string | null;
+  security_deposit?: number | null;
+  conditions?: string | null;
+  notes?: string | null;
+  price_updated_at: string;
+  created_by?: string | null;
   created_at: string;
+  updated_at?: string;
 };
 
 export type VehicleInterest = {
