@@ -15,6 +15,7 @@ interface AuthContextType {
   isLoading: boolean;
   isConfigured: boolean;
   loginWithEmail: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
   loginWithPin: (pin: string) => Promise<{ error: Error | null }>;
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
   logout: () => Promise<void>;
@@ -116,6 +117,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { error: error ? new Error(error.message) : null };
   };
 
+  const signUp = async (email: string, password: string, fullName: string) => {
+    setIsLoading(true);
+    if (!isSupabaseConfigured) {
+      sessionStorage.setItem(DEMO_AUTH_KEY, 'true');
+      setIsDemoAuthenticated(true);
+      const demoId = `demo-user-${Date.now()}`;
+      setProfile({
+        id: demoId,
+        full_name: fullName.trim(),
+        avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(fullName.trim())}`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        nickname: null,
+        phone: null,
+      });
+      setIsLoading(false);
+      return { error: null };
+    }
+
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName.trim(),
+        },
+      },
+    });
+
+    setIsLoading(false);
+    if (error) {
+      return { error: new Error(error.message) };
+    }
+
+    if (data?.user) {
+      setUser(data.user);
+      setSession(data.session);
+      await fetchUserData(data.user.id);
+    }
+
+    return { error: null };
+  };
+
   // Login simplificado por PIN
   const loginWithPin = async (pin: string) => {
     setIsLoading(true);
@@ -210,6 +254,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         isConfigured: isSupabaseConfigured,
         loginWithEmail,
+        signUp,
         loginWithPin,
         updateProfile,
         logout,

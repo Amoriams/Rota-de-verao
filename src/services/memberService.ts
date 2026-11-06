@@ -265,6 +265,125 @@ export const memberService = {
   },
 
   /**
+   * Aceita convite de viagem diretamente com a conta autenticada (SEM EXIGÊNCIA DE PIN)
+   */
+  async acceptTripInvitation(payload: {
+    tripId: string;
+    isCouple?: boolean;
+    partnerName?: string;
+    userProfile?: { id: string; full_name?: string | null; avatar_url?: string | null };
+  }): Promise<{ memberId: string; profileId: string; alreadyMember?: boolean }> {
+    const { tripId, isCouple, partnerName, userProfile } = payload;
+
+    if (!isSupabaseConfigured) {
+      const allMembers = getLocalMembers();
+      const allCouples = getLocalCouples();
+
+      const profileId = userProfile?.id || `user-${Date.now()}`;
+      const existing = allMembers.find((m) => m.trip_id === tripId && m.profile_id === profileId);
+      if (existing) {
+        return { memberId: existing.id, profileId: existing.profile_id, alreadyMember: true };
+      }
+
+      const memberId = `member-${Date.now()}`;
+      const coupleId = isCouple ? `couple-${Date.now()}` : null;
+      const userName = userProfile?.full_name?.trim() || 'Participante';
+
+      const newMember: TripMemberWithProfile = {
+        id: memberId,
+        trip_id: tripId,
+        profile_id: profileId,
+        role: 'member',
+        confirmation_status: 'confirmed',
+        couple_id: coupleId,
+        confirmed_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        profile: {
+          id: profileId,
+          full_name: userName,
+          nickname: null,
+          phone: null,
+          avatar_url: userProfile?.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(userName)}`,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      };
+
+      const updatedMembers = [...allMembers, newMember];
+
+      if (isCouple && partnerName?.trim()) {
+        const partnerProfileId = `user-partner-${Date.now()}`;
+        const partnerMemberId = `member-partner-${Date.now()}`;
+
+        const partnerMember: TripMemberWithProfile = {
+          id: partnerMemberId,
+          trip_id: tripId,
+          profile_id: partnerProfileId,
+          role: 'member',
+          confirmation_status: 'pending',
+          couple_id: coupleId,
+          confirmed_at: null,
+          created_at: new Date().toISOString(),
+          profile: {
+            id: partnerProfileId,
+            full_name: partnerName.trim(),
+            nickname: null,
+            phone: null,
+            avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(partnerName.trim())}`,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+        };
+
+        updatedMembers.push(partnerMember);
+
+        const newCoupleView: CoupleStatusView = {
+          couple_id: coupleId!,
+          trip_id: tripId,
+          label: `${userName} & ${partnerName.trim()}`,
+          member_a_id: profileId,
+          member_b_id: partnerProfileId,
+          member_a_name: userName,
+          member_b_name: partnerName.trim(),
+          member_a_nickname: null,
+          member_b_nickname: null,
+          member_a_avatar: newMember.profile.avatar_url,
+          member_b_avatar: partnerMember.profile.avatar_url,
+          member_a_status: 'confirmed',
+          member_b_status: 'pending',
+          couple_status: 'partial',
+        };
+
+        saveLocalCouples([...allCouples, newCoupleView]);
+      }
+
+      saveLocalMembers(updatedMembers);
+      return { memberId, profileId, alreadyMember: false };
+    }
+
+    // Supabase RPC
+    const { data, error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ data: any; error: Error | null }>)(
+      'accept_trip_invitation',
+      {
+        p_trip_id: tripId,
+        p_is_couple: Boolean(isCouple),
+        p_partner_name: partnerName?.trim() || null,
+      }
+    );
+
+    if (error) {
+      console.error('Erro ao aceitar convite de viagem:', error);
+      throw error;
+    }
+
+    return {
+      memberId: data?.member_id,
+      profileId: data?.profile_id,
+      alreadyMember: Boolean(data?.already_member),
+    };
+  },
+
+  /**
    * Atualiza o status de confirmação individual de um participante
    */
   async updateConfirmationStatus(

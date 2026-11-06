@@ -1,37 +1,37 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { 
   Palmtree, 
   MapPin, 
   Calendar, 
   Heart, 
-  KeyRound, 
   ArrowRight, 
   CheckCircle2, 
   AlertCircle,
   Sparkles,
-  Loader2
+  Loader2,
+  UserCheck,
+  LogIn
 } from 'lucide-react';
 import { tripService } from '../services/tripService';
 import { memberService } from '../services/memberService';
 import { Trip } from '../@types/database.types';
 import { useTrip } from '../contexts/TripContext';
+import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/common/Button';
 
 export const JoinTrip: React.FC = () => {
   const { tripId } = useParams<{ tripId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { selectTrip, refreshTrips } = useTrip();
+  const { isAuthenticated, user, profile } = useAuth();
 
   const [trip, setTrip] = useState<Trip | null>(null);
   const [isLoadingTrip, setIsLoadingTrip] = useState(true);
   const [errorTrip, setErrorTrip] = useState<string | null>(null);
 
-  // Form State
-  const [fullName, setFullName] = useState('');
-  const [nickname, setNickname] = useState('');
-  const [phone, setPhone] = useState('');
-  const [pin, setPin] = useState('');
+  // Form State para Casal (opcional)
   const [isCouple, setIsCouple] = useState(false);
   const [partnerName, setPartnerName] = useState('');
 
@@ -65,7 +65,11 @@ export const JoinTrip: React.FC = () => {
     fetchTrip();
   }, [tripId]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleGoToAuth = () => {
+    navigate('/entrar', { state: { from: location } });
+  };
+
+  const handleAcceptInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
@@ -74,14 +78,8 @@ export const JoinTrip: React.FC = () => {
       return;
     }
 
-    if (!fullName.trim() || fullName.trim().length < 2) {
-      setFormError('Por favor, informe seu nome completo.');
-      return;
-    }
-
-    const cleanPin = pin.trim().replace(/\D/g, '');
-    if (cleanPin.length !== 6) {
-      setFormError('Crie um código PIN de exatamente 6 dígitos numéricos.');
+    if (!user) {
+      handleGoToAuth();
       return;
     }
 
@@ -93,14 +91,15 @@ export const JoinTrip: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      await memberService.joinTripByLink({
+      await memberService.acceptTripInvitation({
         tripId,
-        fullName: fullName.trim(),
-        nickname: nickname.trim() || undefined,
-        phone: phone.trim() || undefined,
-        pin: cleanPin,
         isCouple,
         partnerName: isCouple ? partnerName.trim() : undefined,
+        userProfile: {
+          id: user.id,
+          full_name: profile?.full_name || user.email?.split('@')[0] || 'Participante',
+          avatar_url: profile?.avatar_url || null,
+        },
       });
 
       // Seleciona a viagem no contexto global
@@ -109,11 +108,11 @@ export const JoinTrip: React.FC = () => {
 
       setSuccessJoin(true);
       setTimeout(() => {
-        navigate('/participantes');
-      }, 1800);
+        navigate('/dashboard');
+      }, 1500);
     } catch (err: unknown) {
       console.error('Erro ao ingressar:', err);
-      setFormError(err instanceof Error ? err.message : 'Falha ao concluir entrada na viagem.');
+      setFormError(err instanceof Error ? err.message : 'Falha ao aceitar convite.');
     } finally {
       setIsSubmitting(false);
     }
@@ -182,8 +181,8 @@ export const JoinTrip: React.FC = () => {
           </div>
         </div>
 
-        {/* Formulário de Ingresso */}
-        <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-5">
+        {/* Conteúdo do Convite */}
+        <div className="p-6 sm:p-8 space-y-6">
           {formError && (
             <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-tropical-coral-50 border border-tropical-coral/30 text-tropical-coral text-xs">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -194,132 +193,104 @@ export const JoinTrip: React.FC = () => {
           {successJoin && (
             <div className="flex items-center gap-2.5 p-3.5 rounded-2xl bg-tropical-palm-50 border border-tropical-palm/30 text-tropical-palm text-xs font-semibold animate-fade-in">
               <CheckCircle2 className="w-4 h-4 shrink-0 text-tropical-palm" />
-              <span>Bem-vindo(a) à viagem! Redirecionando para o grupo... 🌴</span>
+              <span>Presença confirmada! Redirecionando para a viagem... 🌴</span>
             </div>
           )}
 
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-tropical-text-secondary uppercase tracking-wider mb-1.5">
-                Seu Nome Completo *
-              </label>
-              <input 
-                type="text"
-                required
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Ex.: Carolina Mendes"
-                className="w-full px-4 py-2.5 rounded-xl border border-tropical-sand-border text-sm text-tropical-text focus:outline-none focus:ring-2 focus:ring-tropical-ocean/30 focus:border-tropical-ocean transition-all"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-tropical-text-secondary uppercase tracking-wider mb-1.5">
-                  Como quer ser chamado(a)? (Apelido)
-                </label>
-                <input 
-                  type="text"
-                  value={nickname}
-                  onChange={(e) => setNickname(e.target.value)}
-                  placeholder="Ex.: Carol"
-                  className="w-full px-4 py-2.5 rounded-xl border border-tropical-sand-border text-sm text-tropical-text focus:outline-none focus:ring-2 focus:ring-tropical-ocean/30 focus:border-tropical-ocean transition-all"
-                />
+          {!isAuthenticated ? (
+            /* ── ESTADO NÃO AUTENTICADO: DIRECIONA AO LOGIN / CADASTRO ── */
+            <div className="text-center space-y-5 py-2">
+              <div className="p-4 rounded-2xl bg-tropical-sand-50 border border-tropical-sand-border/60 text-xs text-tropical-text-secondary leading-relaxed">
+                Esta é uma viagem privada. Para confirmar sua presença e ter acesso aos votos, passagens e hospedagem, acesse sua conta ou crie um cadastro gratuito.
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-tropical-text-secondary uppercase tracking-wider mb-1.5">
-                  WhatsApp (DDD + Número)
-                </label>
-                <input 
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="(11) 98765-4321"
-                  className="w-full px-4 py-2.5 rounded-xl border border-tropical-sand-border text-sm text-tropical-text focus:outline-none focus:ring-2 focus:ring-tropical-ocean/30 focus:border-tropical-ocean transition-all"
-                />
-              </div>
+              <Button
+                onClick={handleGoToAuth}
+                variant="coral"
+                size="lg"
+                fullWidth
+                icon={<LogIn className="w-4 h-4" />}
+                className="py-3 shadow-tropical"
+              >
+                Fazer login ou criar conta para entrar
+              </Button>
             </div>
-
-            {/* Criação do PIN de Acesso */}
-            <div className="p-4 rounded-2xl bg-tropical-sand-50/70 border border-tropical-sand-border/70 space-y-2">
-              <label className="block text-xs font-bold text-tropical-ocean uppercase tracking-wider flex items-center gap-1.5">
-                <KeyRound className="w-3.5 h-3.5" />
-                Crie seu PIN de 6 dígitos *
-              </label>
-              <p className="text-[11px] text-tropical-text-muted">
-                Este código será sua chave individual para acessar o planejamento desta viagem em qualquer dispositivo.
-              </p>
-              <input 
-                type="password"
-                required
-                maxLength={6}
-                pattern="[0-9]*"
-                inputMode="numeric"
-                value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                placeholder="Ex.: 123456"
-                className="w-full px-4 py-2.5 rounded-xl border border-tropical-sand-border bg-white text-center font-mono text-lg tracking-widest text-tropical-text focus:outline-none focus:ring-2 focus:ring-tropical-ocean/30 focus:border-tropical-ocean transition-all"
-              />
-            </div>
-
-            {/* Seleção de Casal */}
-            <div className="pt-2">
-              <label className="flex items-center gap-3 p-3.5 rounded-2xl border border-tropical-sand-border/70 hover:bg-tropical-sand-50/50 cursor-pointer transition-colors">
-                <input 
-                  type="checkbox"
-                  checked={isCouple}
-                  onChange={(e) => setIsCouple(e.target.checked)}
-                  className="w-4 h-4 rounded text-tropical-ocean focus:ring-tropical-ocean cursor-pointer"
-                />
-                <div className="flex-1 text-left">
-                  <span className="text-sm font-bold text-tropical-text flex items-center gap-1.5">
-                    <Heart className="w-4 h-4 text-tropical-coral" />
-                    Vou participar como casal
+          ) : (
+            /* ── ESTADO AUTENTICADO: ENTRADA DIRETA SEM PIN ── */
+            <form onSubmit={handleAcceptInvite} className="space-y-5">
+              {/* Identificação da Conta */}
+              <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-tropical-sand-50 border border-tropical-sand-border/60 text-xs">
+                <div className="w-10 h-10 rounded-full bg-tropical-ocean text-white flex items-center justify-center font-bold text-sm shrink-0">
+                  {profile?.full_name?.slice(0, 1).toUpperCase() || user?.email?.slice(0, 1).toUpperCase() || 'U'}
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] uppercase font-bold text-tropical-text-muted block">
+                    Entrando como:
                   </span>
-                  <span className="block text-xs text-tropical-text-muted mt-0.5">
-                    Facilita a organização de quartos duplos e translados.
+                  <p className="font-bold text-sm text-tropical-text truncate">
+                    {profile?.full_name || user?.email}
+                  </p>
+                  <span className="text-[11px] text-tropical-palm font-semibold flex items-center gap-1">
+                    <UserCheck className="w-3 h-3" /> Conta autenticada
                   </span>
                 </div>
-              </label>
+              </div>
 
-              {isCouple && (
-                <div className="mt-3 pl-7 animate-fade-in">
-                  <label className="block text-xs font-bold text-tropical-text-secondary uppercase tracking-wider mb-1.5">
-                    Nome do(a) Parceiro(a) *
-                  </label>
+              {/* Opção de Casal (Opcional) */}
+              <div className="space-y-2">
+                <label className="flex items-center gap-3 p-3.5 rounded-2xl border border-tropical-sand-border/70 hover:bg-tropical-sand-50/50 cursor-pointer transition-colors">
                   <input 
-                    type="text"
-                    required={isCouple}
-                    value={partnerName}
-                    onChange={(e) => setPartnerName(e.target.value)}
-                    placeholder="Ex.: Gabriel Ramos"
-                    className="w-full px-4 py-2.5 rounded-xl border border-tropical-sand-border text-sm text-tropical-text focus:outline-none focus:ring-2 focus:ring-tropical-ocean/30 focus:border-tropical-ocean transition-all"
+                    type="checkbox"
+                    checked={isCouple}
+                    onChange={(e) => setIsCouple(e.target.checked)}
+                    className="w-4 h-4 rounded text-tropical-ocean focus:ring-tropical-ocean cursor-pointer"
                   />
-                  <span className="block text-[11px] text-tropical-text-muted mt-1">
-                    Ele(a) entrará como pendente até confirmar sua própria presença.
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
+                  <div className="flex-1 text-left">
+                    <span className="text-sm font-bold text-tropical-text flex items-center gap-1.5">
+                      <Heart className="w-4 h-4 text-tropical-coral" />
+                      Vou participar como casal
+                    </span>
+                    <span className="block text-xs text-tropical-text-muted mt-0.5">
+                      Facilita a reserva de quartos privativos e assentos.
+                    </span>
+                  </div>
+                </label>
 
-          <Button
-            type="submit"
-            variant="primary"
-            fullWidth
-            disabled={isSubmitting || successJoin}
-            icon={isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-            iconPosition="right"
-            className="py-3 mt-4"
-          >
-            {isSubmitting ? 'Confirmando entrada...' : 'Entrar na Viagem & Ver Grupo'}
-          </Button>
+                {isCouple && (
+                  <div className="mt-2 pl-7 animate-fade-in">
+                    <label className="block text-xs font-bold text-tropical-text-secondary uppercase tracking-wider mb-1.5">
+                      Nome do(a) Parceiro(a) *
+                    </label>
+                    <input 
+                      type="text"
+                      required={isCouple}
+                      value={partnerName}
+                      onChange={(e) => setPartnerName(e.target.value)}
+                      placeholder="Ex.: Gabriel Ramos"
+                      className="w-full px-4 py-2.5 rounded-xl border border-tropical-sand-border text-sm text-tropical-text focus:outline-none focus:ring-2 focus:ring-tropical-ocean/30 focus:border-tropical-ocean transition-all"
+                    />
+                  </div>
+                )}
+              </div>
 
-          <p className="text-center text-[11px] text-tropical-text-muted pt-2">
-            Ao ingressar, você terá acesso imediato à lista de participantes, opções de hospedagem e enquetes.
-          </p>
-        </form>
+              <Button
+                type="submit"
+                variant="coral"
+                fullWidth
+                disabled={isSubmitting || successJoin}
+                icon={isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                iconPosition="right"
+                className="py-3 shadow-tropical"
+              >
+                {isSubmitting ? 'Confirmando entrada...' : 'Confirmar Presença & Entrar na Viagem'}
+              </Button>
+
+              <p className="text-center text-[11px] text-tropical-text-muted">
+                Sem exigência de PIN &bull; Acesso imediato à programação da viagem
+              </p>
+            </form>
+          )}
+        </div>
 
       </div>
     </div>

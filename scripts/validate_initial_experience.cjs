@@ -107,3 +107,4 @@ console.log(`📊 RESULTADO: ${passed}/${total} TESTES APROVADOS (${Math.round((
 console.log('========================================================\n');
 
 process.exit(passed === total ? 0 : 1);
+
