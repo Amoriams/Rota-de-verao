@@ -1,6 +1,5 @@
 import React from 'react';
-import { Database, LogOut, User } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Database, LogOut } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface DisclaimerBannerProps {
@@ -8,7 +7,7 @@ interface DisclaimerBannerProps {
 }
 
 export const DisclaimerBanner: React.FC<DisclaimerBannerProps> = () => {
-  const { isConfigured, user, profile, logout } = useAuth();
+  const { isConfigured, user, logout } = useAuth();
 
   return (
     <aside
@@ -33,35 +32,17 @@ export const DisclaimerBanner: React.FC<DisclaimerBannerProps> = () => {
           </span>
         </div>
 
-        <div className="flex items-center gap-2.5 shrink-0">
-          {user ? (
-            <div className="flex items-center gap-2 bg-white/10 rounded-full px-3 py-1 border border-white/15">
-              <Link to="/perfil" className="flex items-center gap-1.5 text-xs text-tropical-sand-100 hover:text-white transition-colors">
-                <User className="w-3.5 h-3.5 text-tropical-turquoise" />
-                <span className="font-medium truncate max-w-[140px]">
-                  {profile?.full_name || user.email || 'Meu Perfil'}
-                </span>
-              </Link>
-              <button
-                onClick={logout}
-                className="inline-flex items-center gap-1 text-[11px] text-tropical-coral hover:text-white transition-colors cursor-pointer ml-1 pl-2 border-l border-white/20"
-                title="Encerrar sessão"
-              >
-                <LogOut className="w-3 h-3" /> Sair
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Link
-                to="/perfil"
-                className="inline-flex items-center gap-1 text-xs text-tropical-sand-100 hover:text-white transition-colors"
-              >
-                <User className="w-3.5 h-3.5 text-tropical-turquoise" />
-                <span>Meu Perfil</span>
-              </Link>
-            </div>
-          )}
-        </div>
+        {user && (
+          <div className="flex items-center gap-2.5 shrink-0">
+            <button
+              onClick={logout}
+              className="inline-flex items-center gap-1 text-[11px] text-tropical-coral hover:text-white transition-colors cursor-pointer bg-white/10 hover:bg-white/15 rounded-full px-3 py-1 border border-white/15"
+              title="Encerrar sessão"
+            >
+              <LogOut className="w-3 h-3" /> Sair
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );

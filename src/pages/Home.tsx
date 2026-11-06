@@ -33,7 +33,7 @@ import { pollService } from '../services/pollService';
 import { Trip, TripMemberWithProfile, Flight, Accommodation, VehicleWithInterests, PollWithOptions } from '../@types/database.types';
 
 export const Home: React.FC = () => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { currentTrip } = useTrip();
 
   const [trip, setTrip] = useState<Trip | null>(null);
@@ -193,14 +193,24 @@ export const Home: React.FC = () => {
               <span>31°C &bull; Ensolarado</span>
             </div>
 
-            <div className="hidden sm:flex items-center gap-2 bg-white/20 backdrop-blur-md rounded-full px-3.5 py-1.5 border border-white/30 text-white text-xs font-medium">
+            <Link
+              to="/perfil"
+              className="flex items-center gap-2 bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-full px-3.5 py-1.5 border border-white/30 hover:border-white/50 text-white text-xs font-medium shadow-tropical-sm hover:shadow-tropical transition-all duration-200 cursor-pointer group"
+              title="Acessar meu perfil"
+            >
               <img
-                src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&q=80"
+                src={profile?.avatar_url || "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&q=80"}
                 alt="Avatar"
-                className="w-6 h-6 rounded-full object-cover border border-white"
+                className="w-6 h-6 rounded-full object-cover border border-white group-hover:scale-105 transition-transform"
               />
-              <span>{user?.email ? user.email.split('@')[0] : 'Olá, Julia!'}</span>
-            </div>
+              <span className="group-hover:text-tropical-sand-100 transition-colors">
+                {profile?.full_name 
+                  ? `Olá, ${profile.full_name.split(' ')[0]}!` 
+                  : user?.email 
+                  ? `Olá, ${user.email.split('@')[0]}!` 
+                  : 'Olá, Julia!'}
+              </span>
+            </Link>
           </div>
 
           {/* Conteúdo Central do Hero */}
