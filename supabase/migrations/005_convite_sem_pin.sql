@@ -141,3 +141,4 @@ $$;
 
 COMMENT ON FUNCTION public.accept_trip_invitation(UUID, BOOLEAN, VARCHAR) IS
   'Permite que um usuário autenticado ingresse na viagem via link de convite sem necessidade de PIN, com papel estrito de member.';
+

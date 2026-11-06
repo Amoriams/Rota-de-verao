@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTrip } from '../../contexts/TripContext';
 import { Palmtree } from 'lucide-react';
 
 interface ProtectedRouteProps {
@@ -12,7 +13,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   children,
   requireAdmin = false,
 }) => {
-  const { isAuthenticated, isLoading, role } = useAuth();
+  const { isAuthenticated, isLoading, role: authRole } = useAuth();
+  const { isCurrentTripAdmin, currentTrip } = useTrip();
   const location = useLocation();
 
   if (isLoading) {
@@ -33,9 +35,12 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <Navigate to="/entrar" state={{ from: location }} replace />;
   }
 
-  // Se requer papel de Administradora e o usuário não for admin
-  if (requireAdmin && role !== 'admin') {
-    return <Navigate to="/" replace />;
+  // Se a rota requer papel de Administradora, verifica permissão na viagem ativa
+  if (requireAdmin) {
+    const hasAdminAccess = currentTrip ? isCurrentTripAdmin : authRole === 'admin';
+    if (!hasAdminAccess) {
+      return <Navigate to="/" replace />;
+    }
   }
 
   return <>{children}</>;

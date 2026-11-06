@@ -7,9 +7,9 @@ import { Button } from '../components/common/Button';
 export const Login: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { loginWithEmail, signUp } = useAuth();
+  const { loginWithEmail, signUp, resetPassword } = useAuth();
 
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
 
   // Campos de Login / Cadastro
   const [fullName, setFullName] = useState('');
@@ -28,6 +28,24 @@ export const Login: React.FC = () => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
+
+    if (mode === 'forgot') {
+      if (!email.trim() || !email.includes('@')) {
+        setErrorMsg('Informe um endereço de e-mail válido.');
+        return;
+      }
+
+      setIsSubmitting(true);
+      const { error } = await resetPassword(email.trim());
+      setIsSubmitting(false);
+
+      if (error) {
+        setErrorMsg(error.message || 'Erro ao solicitar recuperação de senha.');
+      } else {
+        setSuccessMsg('Enviamos o link de recuperação para o seu e-mail! Verifique sua caixa de entrada.');
+      }
+      return;
+    }
 
     if (mode === 'signup') {
       if (!fullName.trim() || fullName.trim().length < 2) {
@@ -103,39 +121,50 @@ export const Login: React.FC = () => {
             Plataforma de Viagens em Grupo com Amigos
           </p>
 
-          {/* Alternador de Modo (Entrar vs Criar Conta) */}
-          <div className="mt-6 flex bg-black/20 p-1 rounded-2xl border border-white/20">
-            <button
-              type="button"
-              onClick={() => {
-                setMode('login');
-                setErrorMsg(null);
-                setSuccessMsg(null);
-              }}
-              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                mode === 'login'
-                  ? 'bg-white text-tropical-ocean shadow-xs'
-                  : 'text-white/80 hover:text-white'
-              }`}
-            >
-              Entrar na minha conta
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMode('signup');
-                setErrorMsg(null);
-                setSuccessMsg(null);
-              }}
-              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                mode === 'signup'
-                  ? 'bg-white text-tropical-ocean shadow-xs'
-                  : 'text-white/80 hover:text-white'
-              }`}
-            >
-              Criar uma conta
-            </button>
-          </div>
+          {/* Alternador de Modo (Entrar vs Criar Conta) ou Modo Recuperação */}
+          {mode === 'forgot' ? (
+            <div className="mt-6 text-center">
+              <span className="inline-block px-3 py-1 rounded-full bg-white/20 text-xs font-semibold text-white mb-2">
+                Recuperação de Acesso
+              </span>
+              <p className="text-xs text-tropical-sand-100">
+                Digite seu e-mail para receber as instruções de nova senha.
+              </p>
+            </div>
+          ) : (
+            <div className="mt-6 flex bg-black/20 p-1 rounded-2xl border border-white/20">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('login');
+                  setErrorMsg(null);
+                  setSuccessMsg(null);
+                }}
+                className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                  mode === 'login'
+                    ? 'bg-white text-tropical-ocean shadow-xs'
+                    : 'text-white/80 hover:text-white'
+                }`}
+              >
+                Entrar na minha conta
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('signup');
+                  setErrorMsg(null);
+                  setSuccessMsg(null);
+                }}
+                className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                  mode === 'signup'
+                    ? 'bg-white text-tropical-ocean shadow-xs'
+                    : 'text-white/80 hover:text-white'
+                }`}
+              >
+                Criar uma conta
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Formulário */}
@@ -195,24 +224,41 @@ export const Login: React.FC = () => {
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-tropical-text-secondary uppercase tracking-wider mb-1.5">
-                Senha
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-tropical-text-muted">
-                  <Lock className="w-4 h-4" />
+            {mode !== 'forgot' && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-tropical-text-secondary uppercase tracking-wider">
+                    Senha
+                  </label>
+                  {mode === 'login' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode('forgot');
+                        setErrorMsg(null);
+                        setSuccessMsg(null);
+                      }}
+                      className="text-xs text-tropical-ocean hover:text-tropical-coral font-medium transition-colors cursor-pointer"
+                    >
+                      Esqueceu a senha?
+                    </button>
+                  )}
                 </div>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={mode === 'signup' ? 'Mínimo de 6 caracteres' : '••••••••'}
-                  className="w-full pl-10 pr-4 py-2.5 text-sm bg-tropical-sand-50/50 border border-tropical-sand-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-tropical-ocean focus:bg-white text-tropical-text"
-                />
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-tropical-text-muted">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={mode === 'signup' ? 'Mínimo de 6 caracteres' : '••••••••'}
+                    className="w-full pl-10 pr-4 py-2.5 text-sm bg-tropical-sand-50/50 border border-tropical-sand-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-tropical-ocean focus:bg-white text-tropical-text"
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
             {mode === 'signup' && (
               <div>
@@ -245,9 +291,25 @@ export const Login: React.FC = () => {
               className="mt-2"
             >
               {isSubmitting 
-                ? (mode === 'signup' ? 'Criando conta...' : 'Entrando...') 
-                : (mode === 'signup' ? 'Criar minha conta' : 'Entrar')}
+                ? (mode === 'signup' ? 'Criando conta...' : mode === 'forgot' ? 'Enviando link...' : 'Entrando...') 
+                : (mode === 'signup' ? 'Criar minha conta' : mode === 'forgot' ? 'Enviar link de recuperação' : 'Entrar')}
             </Button>
+
+            {mode === 'forgot' && (
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('login');
+                    setErrorMsg(null);
+                    setSuccessMsg(null);
+                  }}
+                  className="text-xs text-tropical-text-secondary hover:text-tropical-ocean font-semibold underline cursor-pointer"
+                >
+                  &larr; Voltar para o login
+                </button>
+              </div>
+            )}
           </form>
 
           <p className="text-[11px] text-center text-tropical-text-muted pt-2 border-t border-tropical-sand-border/40">

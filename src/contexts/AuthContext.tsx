@@ -16,6 +16,7 @@ interface AuthContextType {
   isConfigured: boolean;
   loginWithEmail: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
+  resetPassword: (email: string) => Promise<{ error: Error | null }>;
   loginWithPin: (pin: string) => Promise<{ error: Error | null }>;
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
   logout: () => Promise<void>;
@@ -160,6 +161,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { error: null };
   };
 
+  const resetPassword = async (email: string) => {
+    setIsLoading(true);
+    if (!isSupabaseConfigured) {
+      setIsLoading(false);
+      return { error: null };
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/entrar`,
+    });
+    setIsLoading(false);
+    return { error: error ? new Error(error.message) : null };
+  };
+
   // Login simplificado por PIN
   const loginWithPin = async (pin: string) => {
     setIsLoading(true);
@@ -255,6 +270,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isConfigured: isSupabaseConfigured,
         loginWithEmail,
         signUp,
+        resetPassword,
         loginWithPin,
         updateProfile,
         logout,
