@@ -394,6 +394,12 @@ AS $$
   );
 $$;
 
+REVOKE ALL ON FUNCTION public.is_trip_member(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_trip_member(UUID) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.is_trip_admin(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_trip_admin(UUID) TO authenticated;
+
 -- 5.3. handle_new_user: cria perfil ao registrar conta no Supabase Auth
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER
