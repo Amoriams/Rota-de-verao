@@ -14,7 +14,9 @@ import {
   Shield,
   Share2,
   Check,
-  Trash2
+  Trash2,
+  RefreshCw,
+  Ban
 } from 'lucide-react';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -27,12 +29,18 @@ import { TripMemberWithProfile, CoupleStatusView, ConfirmationStatus } from '../
 
 export const Participants: React.FC = () => {
   const { user, role } = useAuth();
-  const { currentTrip } = useTrip();
+  const { currentTrip, isCurrentTripAdmin } = useTrip();
+
+  const isAdmin = isCurrentTripAdmin || role === 'admin';
 
   const [viewMode, setViewMode] = useState<'couples' | 'individual'>('couples');
   const [members, setMembers] = useState<TripMemberWithProfile[]>([]);
   const [couples, setCouples] = useState<CoupleStatusView[]>([]);
   const [tripId, setTripId] = useState<string | null>(null);
+
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [isInviteRevoked, setIsInviteRevoked] = useState(false);
+  const [isManagingInvite, setIsManagingInvite] = useState(false);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isError, setIsError] = useState(false);
@@ -65,6 +73,15 @@ export const Participants: React.FC = () => {
 
       setMembers(membersData);
       setCouples(couplesData);
+
+      // Carrega ou gera o token seguro de convite da viagem
+      try {
+        const invite = await memberService.getOrCreateTripInvite(trip.id);
+        setInviteToken(invite.token);
+        setIsInviteRevoked(false);
+      } catch (err) {
+        console.warn('Não foi possível carregar o token de convite:', err);
+      }
     } catch (err: unknown) {
       console.error('Falha ao carregar participantes:', err);
       if (isSupabaseConfigured) {
@@ -78,19 +95,84 @@ export const Participants: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [currentTrip]);
 
   useEffect(() => {
     loadParticipantsData();
   }, [loadParticipantsData, currentTrip?.id]);
 
-  // Cópia do link compartilhável da viagem
-  const handleCopyShareLink = () => {
+  // Cópia do link compartilhável seguro da viagem (com token criptográfico)
+  const handleCopyShareLink = async () => {
     if (!tripId) return;
-    const shareUrl = `${window.location.origin}/convite/${tripId}`;
+
+    if (isInviteRevoked || !inviteToken) {
+      alert('Os convites para esta viagem estão revogados ou inativos. Como administradora, gere um novo link para convidar participantes.');
+      return;
+    }
+
+    const shareUrl = `${window.location.origin}/convite/${tripId}?token=${inviteToken}`;
     navigator.clipboard?.writeText?.(shareUrl);
     setLinkCopied(true);
     setTimeout(() => setLinkCopied(false), 2500);
+  };
+
+  // Regeneração do link seguro de convite (apenas administradora)
+  const handleRegenerateInvite = async () => {
+    if (!tripId || !isAdmin) return;
+    const confirmRegenerate = window.confirm(
+      'Deseja gerar um novo link de convite? O link anterior deixará de funcionar imediatamente.'
+    );
+    if (!confirmRegenerate) return;
+
+    try {
+      setIsManagingInvite(true);
+      const res = await memberService.regenerateTripInvite(tripId);
+      setInviteToken(res.token);
+      setIsInviteRevoked(false);
+      setFeedbackMsg({
+        text: 'Novo link de convite gerado com sucesso! O link anterior foi revogado.',
+        type: 'success',
+      });
+      setTimeout(() => setFeedbackMsg(null), 4000);
+    } catch (err: unknown) {
+      console.error('Erro ao regenerar convite:', err);
+      setFeedbackMsg({
+        text: 'Falha ao regenerar link de convite.',
+        type: 'warning',
+      });
+      setTimeout(() => setFeedbackMsg(null), 3500);
+    } finally {
+      setIsManagingInvite(false);
+    }
+  };
+
+  // Revogação de links de convite (desativar convites - apenas administradora)
+  const handleRevokeInvite = async () => {
+    if (!tripId || !isAdmin) return;
+    const confirmRevoke = window.confirm(
+      'Deseja desativar temporariamente os convites? Ninguém conseguirá entrar na viagem usando os links compartilhados.'
+    );
+    if (!confirmRevoke) return;
+
+    try {
+      setIsManagingInvite(true);
+      await memberService.revokeTripInvite(tripId);
+      setIsInviteRevoked(true);
+      setFeedbackMsg({
+        text: 'Convites desativados. Os links anteriores não concederão mais acesso.',
+        type: 'success',
+      });
+      setTimeout(() => setFeedbackMsg(null), 4000);
+    } catch (err: unknown) {
+      console.error('Erro ao revogar convite:', err);
+      setFeedbackMsg({
+        text: 'Falha ao revogar convites.',
+        type: 'warning',
+      });
+      setTimeout(() => setFeedbackMsg(null), 3500);
+    } finally {
+      setIsManagingInvite(false);
+    }
   };
 
   // Exclusão de participante (apenas administradora)
@@ -276,26 +358,59 @@ export const Participants: React.FC = () => {
         {/* Ações e Alternador de Modo de Visualização */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
           {tripId && (
-            <button
-              onClick={handleCopyShareLink}
-              className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs md:text-sm font-bold transition-all shadow-tropical-sm border cursor-pointer ${
-                linkCopied
-                  ? 'bg-tropical-palm-50 text-tropical-palm border-tropical-palm-200'
-                  : 'bg-white text-tropical-ocean border-tropical-sand-border hover:bg-tropical-sand-50'
-              }`}
-            >
-              {linkCopied ? (
-                <>
-                  <Check className="w-4 h-4 text-tropical-palm" />
-                  Link Copiado!
-                </>
-              ) : (
-                <>
-                  <Share2 className="w-4 h-4 text-tropical-coral" />
-                  Link de Convite da Viagem
-                </>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleCopyShareLink}
+                disabled={isInviteRevoked && !isAdmin}
+                className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs md:text-sm font-bold transition-all shadow-tropical-sm border cursor-pointer ${
+                  linkCopied
+                    ? 'bg-tropical-palm-50 text-tropical-palm border-tropical-palm-200'
+                    : isInviteRevoked
+                    ? 'bg-red-50 text-red-700 border-red-200 opacity-80'
+                    : 'bg-white text-tropical-ocean border-tropical-sand-border hover:bg-tropical-sand-50'
+                }`}
+                title={isInviteRevoked ? 'Convites desativados no momento' : 'Copiar link com token seguro'}
+              >
+                {linkCopied ? (
+                  <>
+                    <Check className="w-4 h-4 text-tropical-palm" />
+                    Link Seguro Copiado!
+                  </>
+                ) : isInviteRevoked ? (
+                  <>
+                    <Ban className="w-4 h-4 text-red-500" />
+                    Convites Desativados
+                  </>
+                ) : (
+                  <>
+                    <Share2 className="w-4 h-4 text-tropical-coral" />
+                    Link Seguro de Convite
+                  </>
+                )}
+              </button>
+
+              {/* Controles Exclusivos da Administradora */}
+              {isAdmin && (
+                <div className="flex items-center gap-1 bg-white p-1 rounded-2xl border border-tropical-sand-border/80 shadow-tropical-sm">
+                  <button
+                    onClick={handleRegenerateInvite}
+                    disabled={isManagingInvite}
+                    className="p-1.5 rounded-xl hover:bg-tropical-sand-50 text-tropical-ocean transition-colors cursor-pointer"
+                    title="Regenerar link de convite (invalida o link anterior)"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isManagingInvite ? 'animate-spin' : ''}`} />
+                  </button>
+                  <button
+                    onClick={handleRevokeInvite}
+                    disabled={isManagingInvite || isInviteRevoked}
+                    className="p-1.5 rounded-xl hover:bg-red-50 text-red-600 transition-colors cursor-pointer disabled:opacity-40"
+                    title="Revogar / Desativar convites"
+                  >
+                    <Ban className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               )}
-            </button>
+            </div>
           )}
 
           <div className="inline-flex p-1 rounded-2xl bg-white border border-tropical-sand-border/60 shadow-tropical-sm">

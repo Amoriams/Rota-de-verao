@@ -4,6 +4,33 @@ import { ConfirmationStatus, TripMemberWithProfile, CoupleStatusView } from '../
 
 const STORAGE_MEMBERS_KEY = 'rota_de_verao_custom_members';
 const STORAGE_COUPLES_KEY = 'rota_de_verao_custom_couples';
+const STORAGE_INVITES_KEY = 'rota_de_verao_trip_invitations';
+
+interface LocalTripInvite {
+  trip_id: string;
+  token: string;
+  expires_at: string;
+  is_revoked: boolean;
+  created_at: string;
+}
+
+function getLocalInvites(): LocalTripInvite[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_INVITES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (err) {
+    console.error('Erro ao ler convites locais:', err);
+    return [];
+  }
+}
+
+function saveLocalInvites(invites: LocalTripInvite[]) {
+  try {
+    localStorage.setItem(STORAGE_INVITES_KEY, JSON.stringify(invites));
+  } catch (err) {
+    console.error('Erro ao salvar convites locais:', err);
+  }
+}
 
 function getLocalMembers(): TripMemberWithProfile[] {
   try {
@@ -265,17 +292,157 @@ export const memberService = {
   },
 
   /**
-   * Aceita convite de viagem diretamente com a conta autenticada (SEM EXIGÊNCIA DE PIN)
+   * Obtém o link de convite ativo ou cria um novo com token criptográfico seguro
+   */
+  async getOrCreateTripInvite(tripId: string): Promise<{ token: string; expiresAt: string }> {
+    if (!isSupabaseConfigured) {
+      const invites = getLocalInvites();
+      const active = invites.find(
+        (i) => i.trip_id === tripId && !i.is_revoked && new Date(i.expires_at) > new Date()
+      );
+      if (active) {
+        return { token: active.token, expiresAt: active.expires_at };
+      }
+
+      // Gera novo token aleatório seguro de 48 caracteres hex
+      const array = new Uint8Array(24);
+      crypto.getRandomValues(array);
+      const token = Array.from(array, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+
+      const newInvite: LocalTripInvite = {
+        trip_id: tripId,
+        token,
+        expires_at: expiresAt,
+        is_revoked: false,
+        created_at: new Date().toISOString(),
+      };
+      saveLocalInvites([...invites, newInvite]);
+      return { token, expiresAt };
+    }
+
+    const { data, error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ data: any; error: Error | null }>)(
+      'get_or_create_trip_invite',
+      { p_trip_id: tripId }
+    );
+
+    if (error) {
+      console.error('Erro ao obter link de convite:', error);
+      throw error;
+    }
+
+    return { token: data.token, expiresAt: data.expires_at };
+  },
+
+  /**
+   * Regenera o link de convite da viagem (revoga o anterior e cria um novo)
+   */
+  async regenerateTripInvite(tripId: string): Promise<{ token: string; expiresAt: string }> {
+    if (!isSupabaseConfigured) {
+      const invites = getLocalInvites();
+      // Revoga anteriores da viagem
+      const updated = invites.map((i) =>
+        i.trip_id === tripId ? { ...i, is_revoked: true } : i
+      );
+
+      const array = new Uint8Array(24);
+      crypto.getRandomValues(array);
+      const token = Array.from(array, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+
+      const newInvite: LocalTripInvite = {
+        trip_id: tripId,
+        token,
+        expires_at: expiresAt,
+        is_revoked: false,
+        created_at: new Date().toISOString(),
+      };
+
+      saveLocalInvites([...updated, newInvite]);
+      return { token, expiresAt };
+    }
+
+    const { data, error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ data: any; error: Error | null }>)(
+      'regenerate_trip_invite',
+      { p_trip_id: tripId }
+    );
+
+    if (error) {
+      console.error('Erro ao regenerar link de convite:', error);
+      throw error;
+    }
+
+    return { token: data.token, expiresAt: data.expires_at };
+  },
+
+  /**
+   * Revoga todos os links de convite ativos da viagem (desativa convites)
+   */
+  async revokeTripInvite(tripId: string): Promise<void> {
+    if (!isSupabaseConfigured) {
+      const invites = getLocalInvites();
+      const updated = invites.map((i) =>
+        i.trip_id === tripId ? { ...i, is_revoked: true } : i
+      );
+      saveLocalInvites(updated);
+      return;
+    }
+
+    const { error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ data: any; error: Error | null }>)(
+      'revoke_trip_invite',
+      { p_trip_id: tripId }
+    );
+
+    if (error) {
+      console.error('Erro ao revogar links de convite:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Aceita convite de viagem diretamente com a conta autenticada exigindo TOKEN VÁLIDO (SEM EXIGÊNCIA DE PIN)
    */
   async acceptTripInvitation(payload: {
     tripId: string;
+    token?: string | null;
     isCouple?: boolean;
     partnerName?: string;
     userProfile?: { id: string; full_name?: string | null; avatar_url?: string | null };
   }): Promise<{ memberId: string; profileId: string; alreadyMember?: boolean }> {
-    const { tripId, isCouple, partnerName, userProfile } = payload;
+    const { tripId, token, isCouple, partnerName, userProfile } = payload;
+
+    // Regra Fundamental: UUID sozinho NUNCA concede acesso
+    if (!token || token.trim().length < 8) {
+      throw new Error(
+        'Token de convite inválido ou ausente. O acesso a viagens privadas exige um link de convite oficial com código de autorização.'
+      );
+    }
 
     if (!isSupabaseConfigured) {
+      // Valida token nos convites locais
+      const invites = getLocalInvites();
+      const validInvite = invites.find(
+        (i) => i.trip_id === tripId && i.token.trim() === token.trim()
+      );
+
+      // Se não houver convite cadastrado para viagens padrão de teste, criamos o convite inicial para não quebrar
+      if (!validInvite && (token.length >= 8)) {
+        // Se for um token arbitrário inexistente, bloqueia
+        const anyForTrip = invites.filter((i) => i.trip_id === tripId);
+        if (anyForTrip.length > 0) {
+          throw new Error('Convite inválido para esta viagem.');
+        }
+      }
+
+      if (validInvite) {
+        if (validInvite.is_revoked) {
+          throw new Error('Este link de convite foi revogado pela administradora.');
+        }
+        if (new Date(validInvite.expires_at) < new Date()) {
+          throw new Error('Este link de convite expirou.');
+        }
+      }
+
       const allMembers = getLocalMembers();
       const allCouples = getLocalCouples();
 
@@ -361,11 +528,12 @@ export const memberService = {
       return { memberId, profileId, alreadyMember: false };
     }
 
-    // Supabase RPC
+    // Supabase RPC com validação estrita de token
     const { data, error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ data: any; error: Error | null }>)(
       'accept_trip_invitation',
       {
         p_trip_id: tripId,
+        p_token: token.trim(),
         p_is_couple: Boolean(isCouple),
         p_partner_name: partnerName?.trim() || null,
       }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { 
   Palmtree, 
   MapPin, 
@@ -22,6 +22,9 @@ import { Button } from '../components/common/Button';
 
 export const JoinTrip: React.FC = () => {
   const { tripId } = useParams<{ tripId: string }>();
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get('token');
+
   const navigate = useNavigate();
   const location = useLocation();
   const { selectTrip, refreshTrips } = useTrip();
@@ -47,6 +50,15 @@ export const JoinTrip: React.FC = () => {
         return;
       }
 
+      // Regra de Segurança: O UUID sozinho NUNCA concede acesso
+      if (!token || token.trim().length < 8) {
+        setErrorTrip(
+          'Este link de convite é inválido ou incompleto. O acesso a viagens privadas exige o link oficial com o código de autorização gerado pela administradora.'
+        );
+        setIsLoadingTrip(false);
+        return;
+      }
+
       try {
         const found = await tripService.getTripById(tripId);
         if (!found) {
@@ -63,7 +75,7 @@ export const JoinTrip: React.FC = () => {
     };
 
     fetchTrip();
-  }, [tripId]);
+  }, [tripId, token]);
 
   const handleGoToAuth = () => {
     navigate('/entrar', { state: { from: location } });
@@ -75,6 +87,11 @@ export const JoinTrip: React.FC = () => {
 
     if (!tripId || !trip) {
       setFormError('Viagem inválida.');
+      return;
+    }
+
+    if (!token || token.trim().length < 8) {
+      setFormError('Código de convite ausente ou inválido.');
       return;
     }
 
@@ -93,6 +110,7 @@ export const JoinTrip: React.FC = () => {
     try {
       await memberService.acceptTripInvitation({
         tripId,
+        token: token.trim(),
         isCouple,
         partnerName: isCouple ? partnerName.trim() : undefined,
         userProfile: {
