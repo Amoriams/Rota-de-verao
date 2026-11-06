@@ -15,6 +15,7 @@ import {
   Sun,
   Compass,
   Map,
+  User,
 } from 'lucide-react';
 import { TripSwitcher } from '../trips/TripSwitcher';
 
@@ -27,6 +28,7 @@ const navItems = [
   { label: 'Participantes',   to: '/participantes',   icon: Users,         adminOnly: false },
   { label: 'Votações',        to: '/enquetes',        icon: Vote,          adminOnly: false },
   { label: 'Despesas',        to: '/financeiro',      icon: Receipt,       adminOnly: false },
+  { label: 'Meu Perfil',      to: '/perfil',          icon: User,          adminOnly: false },
   { label: 'Minhas Viagens',  to: '/minhas-viagens',  icon: Map,           adminOnly: true  },
   { label: 'Configurações',   to: '/administracao',   icon: Settings,      adminOnly: true  },
 ];

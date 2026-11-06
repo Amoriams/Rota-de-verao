@@ -196,3 +196,4 @@ console.log(`📊 RESULTADO: ${pass}/${pass + fail} TESTES APROVADOS (100%)`);
 console.log('========================================================\n');
 
 if (fail > 0) process.exit(1);
+

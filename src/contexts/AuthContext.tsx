@@ -14,6 +14,7 @@ interface AuthContextType {
   isConfigured: boolean;
   loginWithEmail: (email: string, password: string) => Promise<{ error: Error | null }>;
   loginWithPin: (pin: string) => Promise<{ error: Error | null }>;
+  updateProfile: (updates: Partial<Profile>) => Promise<void>;
   logout: () => Promise<void>;
   // Alternador para modo demo quando offline ou sem chaves configuradas
   setDemoRole: (role: UserRole) => void;
@@ -133,6 +134,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const updateProfile = async (updates: Partial<Profile>) => {
+    if (!isSupabaseConfigured) {
+      if (profile) {
+        setProfile({
+          ...profile,
+          ...updates,
+          updated_at: new Date().toISOString(),
+        });
+      }
+      return;
+    }
+
+    if (!user) throw new Error('Usuário não autenticado.');
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', user.id);
+
+    if (error) throw error;
+    await fetchUserData(user.id);
+  };
+
   const logout = async () => {
     if (isSupabaseConfigured) {
       await supabase.auth.signOut();
@@ -160,6 +187,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isConfigured: isSupabaseConfigured,
         loginWithEmail,
         loginWithPin,
+        updateProfile,
         logout,
         setDemoRole,
       }}

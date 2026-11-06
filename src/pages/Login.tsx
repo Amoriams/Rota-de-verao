@@ -8,7 +8,11 @@ export const Login: React.FC = () => {
   const location = useLocation();
   const { loginWithPin, loginWithEmail, isConfigured } = useAuth();
 
-  const [mode, setMode] = useState<'pin' | 'admin'>('pin');
+  const [mode, setMode] = useState<'pin' | 'admin'>(() => {
+    // Se o usuário acessar /entrar?admin=true ativa modo administrativo
+    const params = new URLSearchParams(window.location.search);
+    return params.get('admin') === 'true' ? 'admin' : 'pin';
+  });
   const [pin, setPin] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -101,33 +105,35 @@ export const Login: React.FC = () => {
           </p>
         </div>
 
-        {/* Alternador de Abas: Convidado vs Administradora */}
-        <div className="flex border-b border-tropical-sand-border/40 bg-tropical-sand-50/50">
-          <button
-            type="button"
-            onClick={() => { setMode('pin'); setErrorMsg(null); }}
-            className={`flex-1 py-3 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              mode === 'pin'
-                ? 'bg-white text-tropical-ocean border-b-2 border-tropical-ocean shadow-xs'
-                : 'text-tropical-text-muted hover:text-tropical-ocean'
-            }`}
-          >
-            <KeyRound className="w-3.5 h-3.5" />
-            Convidado (PIN)
-          </button>
-          <button
-            type="button"
-            onClick={() => { setMode('admin'); setErrorMsg(null); }}
-            className={`flex-1 py-3 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              mode === 'admin'
-                ? 'bg-white text-tropical-ocean border-b-2 border-tropical-ocean shadow-xs'
-                : 'text-tropical-text-muted hover:text-tropical-ocean'
-            }`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            Administradora
-          </button>
-        </div>
+        {/* Cabeçalho do Login de Participante / Admin */}
+        {new URLSearchParams(window.location.search).get('admin') === 'true' && (
+          <div className="flex border-b border-tropical-sand-border/40 bg-tropical-sand-50/50">
+            <button
+              type="button"
+              onClick={() => { setMode('pin'); setErrorMsg(null); }}
+              className={`flex-1 py-3 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                mode === 'pin'
+                  ? 'bg-white text-tropical-ocean border-b-2 border-tropical-ocean shadow-xs'
+                  : 'text-tropical-text-muted hover:text-tropical-ocean'
+              }`}
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              Convidado (PIN)
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode('admin'); setErrorMsg(null); }}
+              className={`flex-1 py-3 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                mode === 'admin'
+                  ? 'bg-white text-tropical-ocean border-b-2 border-tropical-ocean shadow-xs'
+                  : 'text-tropical-text-muted hover:text-tropical-ocean'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              Administradora
+            </button>
+          </div>
+        )}
 
         {/* Conteúdo do Formulário */}
         <div className="p-6 md:p-8">

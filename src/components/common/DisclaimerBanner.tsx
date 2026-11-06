@@ -1,17 +1,14 @@
 import React from 'react';
-import { ShieldAlert, Sparkles, Database, LogOut } from 'lucide-react';
+import { Database, LogOut, User } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface DisclaimerBannerProps {
-  currentRole: 'admin' | 'member';
-  onToggleRole: () => void;
+  currentRole?: 'admin' | 'member';
 }
 
-export const DisclaimerBanner: React.FC<DisclaimerBannerProps> = ({
-  currentRole,
-  onToggleRole,
-}) => {
-  const { isConfigured, user, logout } = useAuth();
+export const DisclaimerBanner: React.FC<DisclaimerBannerProps> = () => {
+  const { isConfigured, user, profile, logout } = useAuth();
 
   return (
     <aside
@@ -27,11 +24,11 @@ export const DisclaimerBanner: React.FC<DisclaimerBannerProps> = ({
           />
           <Database className="w-3.5 h-3.5 text-tropical-turquoise shrink-0 hidden sm:inline" />
           <span className="text-white/90">
-            <strong className="font-semibold text-tropical-turquoise">Marco 3 Ativo:</strong>{' '}
+            <strong className="font-semibold text-tropical-turquoise">Rota de Verão:</strong>{' '}
             {isConfigured ? (
               <span className="text-emerald-300 font-medium">Supabase Conectado com RLS ✅</span>
             ) : (
-              <span className="text-tropical-sand-100">Modo Demonstrativo Seguro (Pronto para conexão).</span>
+              <span className="text-tropical-sand-100">Ambiente Seguro dos Participantes.</span>
             )}
           </span>
         </div>
@@ -39,12 +36,15 @@ export const DisclaimerBanner: React.FC<DisclaimerBannerProps> = ({
         <div className="flex items-center gap-2.5 shrink-0">
           {user ? (
             <div className="flex items-center gap-2 bg-white/10 rounded-full px-3 py-1 border border-white/15">
-              <span className="text-xs text-tropical-sand-100 font-medium">
-                {user.email || 'Participante'}
-              </span>
+              <Link to="/perfil" className="flex items-center gap-1.5 text-xs text-tropical-sand-100 hover:text-white transition-colors">
+                <User className="w-3.5 h-3.5 text-tropical-turquoise" />
+                <span className="font-medium truncate max-w-[140px]">
+                  {profile?.full_name || user.email || 'Meu Perfil'}
+                </span>
+              </Link>
               <button
                 onClick={logout}
-                className="inline-flex items-center gap-1 text-[11px] text-tropical-coral hover:text-white transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1 text-[11px] text-tropical-coral hover:text-white transition-colors cursor-pointer ml-1 pl-2 border-l border-white/20"
                 title="Encerrar sessão"
               >
                 <LogOut className="w-3 h-3" /> Sair
@@ -52,29 +52,13 @@ export const DisclaimerBanner: React.FC<DisclaimerBannerProps> = ({
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <span className="text-white/60 text-[11px] hidden lg:inline">
-                Perspectiva:
-              </span>
-              <button
-                onClick={onToggleRole}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 transition-all text-xs font-semibold border border-white/20 text-white cursor-pointer active:scale-95"
-                title="Clique para alternar a perspectiva da interface entre Administradora e Convidada"
+              <Link
+                to="/perfil"
+                className="inline-flex items-center gap-1 text-xs text-tropical-sand-100 hover:text-white transition-colors"
               >
-                {currentRole === 'admin' ? (
-                  <>
-                    <ShieldAlert className="w-3.5 h-3.5 text-tropical-coral" />
-                    <span>Visão: <span className="text-tropical-coral">Administradora</span></span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-3.5 h-3.5 text-tropical-turquoise" />
-                    <span>Visão: <span className="text-tropical-turquoise">Convidada</span></span>
-                  </>
-                )}
-                <span className="text-[10px] text-tropical-sand-200 underline ml-0.5">
-                  (alternar)
-                </span>
-              </button>
+                <User className="w-3.5 h-3.5 text-tropical-turquoise" />
+                <span>Meu Perfil</span>
+              </Link>
             </div>
           )}
         </div>

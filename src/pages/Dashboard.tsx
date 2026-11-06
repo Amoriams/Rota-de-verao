@@ -62,13 +62,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ currentRole }) => {
             <h1 className="font-display font-extrabold text-2xl md:text-3xl text-tropical-text">
               Dashboard da Viagem
             </h1>
-            <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
-              currentRole === 'admin'
-                ? 'bg-tropical-coral-50 text-tropical-coral border border-tropical-coral-200'
-                : 'bg-tropical-sand-100 text-tropical-text-secondary border border-tropical-sand-border'
-            }`}>
-              {currentRole === 'admin' ? 'Visão: Administradora' : 'Visão: Convidada'}
-            </span>
           </div>
           <p className="text-tropical-text-muted text-sm mt-1.5 flex items-center gap-2">
             <MapPin className="w-3.5 h-3.5 text-tropical-coral" />

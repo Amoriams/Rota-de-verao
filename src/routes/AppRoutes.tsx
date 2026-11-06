@@ -12,6 +12,7 @@ import { Admin } from '../pages/Admin';
 import { Login } from '../pages/Login';
 import { MyTrips } from '../pages/MyTrips';
 import { JoinTrip } from '../pages/JoinTrip';
+import { Profile } from '../pages/Profile';
 import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 
 interface AppRoutesProps {
@@ -89,6 +90,14 @@ export const AppRoutes: React.FC<AppRoutesProps> = ({ currentRole }) => {
         element={
           <ProtectedRoute>
             <Expenses />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/perfil"
+        element={
+          <ProtectedRoute>
+            <Profile />
           </ProtectedRoute>
         }
       />

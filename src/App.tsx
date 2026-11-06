@@ -7,15 +7,11 @@ import { Sidebar } from './components/layout/Sidebar';
 import { AppRoutes } from './routes/AppRoutes';
 
 const AppLayout: React.FC = () => {
-  const { role, setDemoRole } = useAuth();
+  const { role } = useAuth();
   const location = useLocation();
 
   const isLoginPage = location.pathname === '/entrar';
   const isJoinPage = location.pathname.startsWith('/convite/');
-
-  const handleToggleRole = () => {
-    setDemoRole(role === 'admin' ? 'member' : 'admin');
-  };
 
   // Se estiver na tela de login ou na página de convite público, renderiza tela cheia
   if (isLoginPage || isJoinPage) {
@@ -29,11 +25,8 @@ const AppLayout: React.FC = () => {
 
       {/* Área de conteúdo principal — deslocada à direita no desktop */}
       <div className="flex-1 flex flex-col lg:ml-64 min-w-0">
-        {/* Banner informativo e alternador de perfil */}
-        <DisclaimerBanner
-          currentRole={role}
-          onToggleRole={handleToggleRole}
-        />
+        {/* Banner informativo e acesso rápido ao perfil */}
+        <DisclaimerBanner currentRole={role} />
 
         {/* Conteúdo das páginas */}
         <main className="flex-1">
