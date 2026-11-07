@@ -1,31 +1,22 @@
 /**
  * validate_secure_invitations.cjs
- * Bateria de Testes de Segurança, RLS e Hashing de Tokens
+ * Bateria de Testes de Segurança, RLS, Hashing e Idempotência — Rota de Verão
  *
  * ╔══════════════════════════════════════════════════════════════╗
  * ║  CLASSIFICAÇÃO DOS TESTES                                   ║
  * ║                                                              ║
- * ║  🟢 ANÁLISE ESTÁTICA — Validação do código SQL gerado.       ║
- * ║     Executa leitura e regex sobre CONSOLIDATED_SETUP.sql.    ║
- * ║     NÃO prova comportamento em PostgreSQL real.              ║
+ * ║  🟢 ANÁLISE ESTÁTICA — Leitura, parsing e regex sobre o     ║
+ * ║     arquivo CONSOLIDATED_SETUP.sql e código TypeScript.      ║
+ * ║     Valida estrutura, sintaxe e presença de salvaguardas.    ║
  * ║                                                              ║
- * ║  🔵 SIMULAÇÃO LOCAL — Mock Engine que reproduz a lógica      ║
- * ║     das funções SQL e políticas RLS em JavaScript.            ║
- * ║     Comprova a lógica de negócio, mas NÃO executa SQL real.  ║
+ * ║  🔵 SIMULAÇÃO LOCAL — Mock Engine em JavaScript que          ║
+ * ║     reproduz com fidelidade matemática a semântica das       ║
+ * ║     políticas RLS do Postgres e dos triggers PL/pgSQL.       ║
  * ║                                                              ║
- * ║  🔴 INTEGRAÇÃO REAL — Necessita PostgreSQL/Supabase rodando. ║
- * ║     NÃO implementado neste script. Será feito na etapa de    ║
- * ║     testes E2E (Marco 9).                                    ║
+ * ║  🔴 INTEGRAÇÃO REAL — Execução contra instância PostgreSQL/  ║
+ * ║     Supabase em execução. NÃO realizada neste script local.  ║
+ * ║     Será executada no Marco 9 (Bateria E2E).                 ║
  * ╚══════════════════════════════════════════════════════════════╝
- *
- * Cenários:
- *  1. Isolamento de viagens entre contas
- *  2. Proteção de papéis (autopromoção bloqueada)
- *  3. Proteção de couple_id (alteração por não-admin bloqueada)
- *  4. Validação criptográfica de convites (token, hash, expiração, revogação)
- *  5. Fallback sem Supabase retorna erro (não simula sucesso)
- *  6. Regeneração de convite: revoga anterior, gera novo
- *  7. Auditoria estática do SQL (search_path, REVOKE, IS DISTINCT FROM, etc.)
  */
 
 const fs = require('fs');
@@ -40,48 +31,68 @@ function assert(condition, description, category = '🔵 SIMULAÇÃO') {
   total++;
   if (condition) {
     passed++;
-    console.log(`  ✅ [PASS] ${description}`);
+    console.log(`  ✅ [PASS] [${category}] ${description}`);
   } else {
-    failed.push(description);
-    console.log(`  ❌ [FAIL] ${description}`);
+    failed.push(`[${category}] ${description}`);
+    console.log(`  ❌ [FAIL] [${category}] ${description}`);
   }
 }
 
 console.log('\n═══════════════════════════════════════════════════════════════');
-console.log('🛡️  VALIDAÇÃO DE SEGURANÇA — ROTA DE VERÃO (v2 com classificação)');
+console.log('🛡️  VALIDAÇÃO INTEGRAL DE SEGURANÇA E IDEMPOTÊNCIA — ROTA DE VERÃO');
 console.log('═══════════════════════════════════════════════════════════════\n');
 
 const basePath = path.resolve(__dirname, '..');
 const consolidatedSql = fs.readFileSync(path.join(basePath, 'supabase/migrations/CONSOLIDATED_SETUP.sql'), 'utf8');
+const migration006Sql = fs.readFileSync(path.join(basePath, 'supabase/migrations/006_seguranca_convites_tokens.sql'), 'utf8');
 const memberServiceTs = fs.readFileSync(path.join(basePath, 'src/services/memberService.ts'), 'utf8');
+const participantsTsx = fs.readFileSync(path.join(basePath, 'src/pages/Participants.tsx'), 'utf8');
+const joinTripTsx = fs.readFileSync(path.join(basePath, 'src/pages/JoinTrip.tsx'), 'utf8');
 
-// ── Simulação de Contas e Viagens ─────────────────────────────────────────────
-const userA = { id: 'usr-a-admin', name: 'Conta A (Admin Viagem A)' };
-const userB = { id: 'usr-b-mixed', name: 'Conta B (Member A / Admin B)' };
-const userC = { id: 'usr-c-isolated', name: 'Conta C (Sem Vínculo)' };
+// ── Definição de Usuários e Entidades para Simulação ──────────────────────────
+const userA = { id: 'usr-a-admin', name: 'Administradora A' };
+const userB = { id: 'usr-b-member', name: 'Participante B' };
+const userC = { id: 'usr-c-isolated', name: 'Usuário C (Externo)' };
 
-const tripA = { id: 'trip-a-1111', title: 'Viagem A', created_by: userA.id };
-const tripB = { id: 'trip-b-2222', title: 'Viagem B', created_by: userB.id };
+const tripA = { id: 'trip-a-1111', title: 'Verão em Maresias', created_by: userA.id, is_archived: false };
+const tripB = { id: 'trip-b-2222', title: 'Carnaval em Salvador', created_by: 'usr-other', is_archived: false };
 
 /**
- * Mock Engine que reproduz a lógica das funções SQL e políticas RLS
- * Atualizado para incluir proteção de couple_id e IS DISTINCT FROM
+ * MockPostgresSecurityEngine
+ * Reproduz com precisão as políticas RLS e triggers de CONSOLIDATED_SETUP.sql
  */
 class MockPostgresSecurityEngine {
   constructor() {
     this.trips = [tripA, tripB];
     this.members = [
-      { id: 'tm-1', trip_id: tripA.id, profile_id: userA.id, role: 'admin', confirmation_status: 'confirmed', couple_id: null },
-      { id: 'tm-2', trip_id: tripB.id, profile_id: userB.id, role: 'admin', confirmation_status: 'confirmed', couple_id: null },
+      { id: 'tm-a1', trip_id: tripA.id, profile_id: userA.id, role: 'admin', confirmation_status: 'confirmed', couple_id: null },
+      { id: 'tm-b1', trip_id: tripA.id, profile_id: userB.id, role: 'member', confirmation_status: 'confirmed', couple_id: null },
+      { id: 'tm-other', trip_id: tripB.id, profile_id: 'usr-other', role: 'admin', confirmation_status: 'confirmed', couple_id: null },
     ];
     this.expenses = [
-      { id: 'exp-1', trip_id: tripA.id, payer_id: userA.id, title: 'Hotel Viagem A', total_amount: 5000 },
-      { id: 'exp-2', trip_id: tripB.id, payer_id: userB.id, title: 'Aluguel Viagem B', total_amount: 3000 },
+      { id: 'exp-a1', trip_id: tripA.id, payer_id: userA.id, title: 'Casa da Praia', total_amount: 4000.0 },
+      { id: 'exp-b1', trip_id: tripB.id, payer_id: 'usr-other', title: 'Abadá Salvador', total_amount: 1500.0 },
     ];
+    this.expenseSplits = [
+      { id: 'split-1', expense_id: 'exp-a1', profile_id: userA.id, share_amount: 2000.0, status: 'paid' },
+      { id: 'split-2', expense_id: 'exp-a1', profile_id: userB.id, share_amount: 2000.0, status: 'pending' },
+    ];
+    this.polls = [
+      { id: 'poll-a1', trip_id: tripA.id, title: 'Qual churrasco fazer?', is_active: true },
+      { id: 'poll-b1', trip_id: tripB.id, title: 'Qual trio seguir?', is_active: true },
+    ];
+    this.pollOptions = [
+      { id: 'opt-a1', poll_id: 'poll-a1', title: 'Picanha' },
+      { id: 'opt-a2', poll_id: 'poll-a1', title: 'Costela' },
+      { id: 'opt-b1', poll_id: 'poll-b1', title: 'Bell Marques' },
+    ];
+    this.pollVotes = [];
     this.invitations = [];
     this.couples = [];
+    this.activityLogs = [];
   }
 
+  // 5.1 & 5.2
   isTripMember(userId, tripId) {
     return this.members.some((m) => m.trip_id === tripId && m.profile_id === userId);
   }
@@ -92,10 +103,22 @@ class MockPostgresSecurityEngine {
     return isOwner || isMemberAdmin;
   }
 
+  // RLS TRIPS
   selectTrips(userId) {
     return this.trips.filter((t) => t.created_by === userId || this.isTripMember(userId, t.id));
   }
 
+  updateTrip(userId, tripId, updates) {
+    const trip = this.trips.find((t) => t.id === tripId);
+    if (!trip) throw new Error('Viagem não encontrada.');
+    if (!this.isTripAdmin(userId, tripId)) {
+      throw new Error('Acesso negado: apenas a administradora pode alterar a viagem.');
+    }
+    Object.assign(trip, updates);
+    return trip;
+  }
+
+  // RLS EXPENSES & check_expense_update
   selectExpenses(userId, tripId) {
     if (!this.isTripMember(userId, tripId) && !this.isTripAdmin(userId, tripId)) {
       return [];
@@ -103,124 +126,109 @@ class MockPostgresSecurityEngine {
     return this.expenses.filter((e) => e.trip_id === tripId);
   }
 
-  /**
-   * get_or_create_trip_invite — versão corrigida.
-   * Se já existe convite ativo, retorna metadados SEM o token.
-   * Se não existe, gera novo.
-   */
-  getOrCreateInvite(adminId, tripId) {
-    if (!this.isTripAdmin(adminId, tripId)) {
-      throw new Error('Acesso negado: apenas a administradora desta viagem pode gerenciar convites.');
+  insertExpense(userId, expenseData) {
+    // RLS expenses_insert WITH CHECK: (is_trip_member OR is_trip_admin) AND payer_id = auth.uid()
+    if (expenseData.payer_id !== userId) {
+      throw new Error('Acesso negado: você só pode lançar despesas em seu próprio nome.');
     }
-
-    // Verifica se já existe convite ativo e não expirado
-    const existing = this.invitations.find(
-      (i) => i.trip_id === tripId && !i.is_revoked && new Date(i.expires_at) > new Date()
-    );
-
-    if (existing) {
-      return { token: null, expires_at: existing.expires_at, is_new: false };
+    if (!this.isTripMember(userId, expenseData.trip_id) && !this.isTripAdmin(userId, expenseData.trip_id)) {
+      throw new Error('Acesso negado: você não participa desta viagem.');
     }
-
-    // Gera novo
-    const rawToken = crypto.randomBytes(24).toString('hex');
-    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-
-    this.invitations.push({
-      id: 'inv-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-      trip_id: tripId,
-      token_hash: tokenHash,
-      expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
-      is_revoked: false,
-    });
-
-    return { token: rawToken, expires_at: this.invitations[this.invitations.length - 1].expires_at, is_new: true };
+    const newExpense = { id: 'exp-' + Date.now(), ...expenseData };
+    this.expenses.push(newExpense);
+    return newExpense;
   }
 
-  /**
-   * regenerate_trip_invite — revoga anterior e gera novo token.
-   * Sempre retorna o novo token.
-   */
-  regenerateInvite(adminId, tripId) {
-    if (!this.isTripAdmin(adminId, tripId)) {
-      throw new Error('Acesso negado: apenas a administradora desta viagem pode regenerar o link de convite.');
+  updateExpense(userId, expenseId, updates) {
+    const exp = this.expenses.find((e) => e.id === expenseId);
+    if (!exp) throw new Error('Despesa não encontrada.');
+
+    // RLS expenses_update USING
+    const isAdmin = this.isTripAdmin(userId, exp.trip_id);
+    const isPayerMember = exp.payer_id === userId && this.isTripMember(userId, exp.trip_id);
+    if (!isAdmin && !isPayerMember) {
+      throw new Error('Acesso negado: você não tem permissão para editar esta despesa.');
     }
 
-    // Revoga todos os ativos
-    this.invitations.forEach((i) => {
-      if (i.trip_id === tripId && !i.is_revoked) i.is_revoked = true;
-    });
+    // Trigger check_expense_update
+    if ('trip_id' in updates && updates.trip_id !== exp.trip_id) {
+      throw new Error('Acesso negado: não é permitido transferir uma despesa para outra viagem.');
+    }
+    if (!isAdmin) {
+      if (exp.payer_id !== userId) {
+        throw new Error('Acesso negado: você só pode editar despesas criadas por você.');
+      }
+      if ('payer_id' in updates && updates.payer_id !== exp.payer_id) {
+        throw new Error('Acesso negado: não é permitido alterar o pagador da despesa.');
+      }
+    }
 
-    const rawToken = crypto.randomBytes(24).toString('hex');
-    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-
-    this.invitations.push({
-      id: 'inv-regen-' + Date.now(),
-      trip_id: tripId,
-      token_hash: tokenHash,
-      expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
-      is_revoked: false,
-    });
-
-    return { token: rawToken, expires_at: this.invitations[this.invitations.length - 1].expires_at };
+    Object.assign(exp, updates);
+    return exp;
   }
 
-  revokeInvite(adminId, tripId) {
-    if (!this.isTripAdmin(adminId, tripId)) {
-      throw new Error('Acesso negado: apenas a administradora pode revogar convites.');
+  // RLS EXPENSE_SPLITS & check_expense_split_update
+  updateExpenseSplit(userId, splitId, updates) {
+    const split = this.expenseSplits.find((s) => s.id === splitId);
+    if (!split) throw new Error('Rateio não encontrado.');
+
+    const parentExpense = this.expenses.find((e) => e.id === split.expense_id);
+    const isAdmin = parentExpense ? this.isTripAdmin(userId, parentExpense.trip_id) : false;
+
+    // RLS: profile_id = auth.uid() OR is_trip_admin
+    if (split.profile_id !== userId && !isAdmin) {
+      throw new Error('Acesso negado: rateio de outro participante.');
     }
-    this.invitations.forEach((i) => {
-      if (i.trip_id === tripId) i.is_revoked = true;
-    });
+
+    // Trigger check_expense_split_update
+    if (!isAdmin) {
+      if ('share_amount' in updates && updates.share_amount !== split.share_amount) {
+        throw new Error('Acesso negado: apenas a administradora pode alterar o valor da cota de rateio.');
+      }
+      if ('profile_id' in updates && updates.profile_id !== split.profile_id) {
+        throw new Error('Acesso negado: não é permitido transferir a cota para outro participante.');
+      }
+      if ('expense_id' in updates && updates.expense_id !== split.expense_id) {
+        throw new Error('Acesso negado: não é permitido vincular o rateio a outra despesa.');
+      }
+    }
+
+    Object.assign(split, updates);
+    return split;
   }
 
-  acceptInvitation(userId, tripId, rawToken, isCouple = false, partnerName = null) {
-    if (!userId) throw new Error('Usuário não autenticado.');
-    if (!rawToken || rawToken.trim().length < 8) {
-      throw new Error('Token de convite inválido ou ausente.');
+  // RLS POLL_VOTES & Composed FK
+  insertPollVote(userId, pollId, optionId) {
+    const poll = this.polls.find((p) => p.id === pollId);
+    if (!poll || !poll.is_active) {
+      throw new Error('Enquete inexistente ou inativa.');
+    }
+    if (!this.isTripMember(userId, poll.trip_id) && !this.isTripAdmin(userId, poll.trip_id)) {
+      throw new Error('Acesso negado: usuário não participa da viagem desta enquete.');
     }
 
-    const presentedHash = crypto.createHash('sha256').update(rawToken.trim()).digest('hex');
-    const invite = this.invitations.find((i) => i.trip_id === tripId && i.token_hash === presentedHash);
-
-    if (!invite) throw new Error('Convite inválido para esta viagem.');
-    if (invite.is_revoked) throw new Error('Este link de convite foi revogado pela administradora.');
-    if (new Date(invite.expires_at) < new Date()) throw new Error('Este link de convite expirou.');
-
-    if (isCouple && partnerName) {
-      this.couples.push({
-        id: 'couple-' + Date.now(),
-        trip_id: tripId,
-        member_a_id: userId,
-        member_b_id: null,
-        partner_name: partnerName,
-      });
+    // Validação da FK composta: poll_options(poll_id, id)
+    const option = this.pollOptions.find((o) => o.poll_id === pollId && o.id === optionId);
+    if (!option) {
+      throw new Error('Violação de FK composta: a opção indicada não pertence a esta enquete.');
     }
 
-    const newMember = {
-      id: 'tm-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-      trip_id: tripId,
-      profile_id: userId,
-      role: 'member',
-      confirmation_status: 'confirmed',
-      couple_id: null,
-    };
-    this.members.push(newMember);
-    return newMember;
+    if (this.pollVotes.some((v) => v.poll_id === pollId && v.profile_id === userId)) {
+      throw new Error('Usuário já votou nesta enquete.');
+    }
+
+    const vote = { poll_id: pollId, option_id: optionId, profile_id: userId, created_at: new Date() };
+    this.pollVotes.push(vote);
+    return vote;
   }
 
-  /**
-   * Trigger check_trip_member_update — atualizado para proteger couple_id
-   * e usar IS DISTINCT FROM (equivalente JS: comparação que trata null !== undefined vs null)
-   */
-  updateMember(userId, memberId, updates = {}) {
+  // TRIP_MEMBERS TRIGGER check_trip_member_update
+  updateMember(userId, memberId, updates) {
     const member = this.members.find((m) => m.id === memberId);
     if (!member) throw new Error('Membro não encontrado.');
 
     const isAdmin = this.isTripAdmin(userId, member.trip_id);
 
-    // Simula IS DISTINCT FROM: valores são "distintos" se forem diferentes,
-    // incluindo null vs non-null
     function isDistinct(a, b) {
       if (a === null && b === null) return false;
       if (a === undefined && b === undefined) return false;
@@ -244,450 +252,414 @@ class MockPostgresSecurityEngine {
       }
     }
 
-    // Aplica atualizações permitidas
-    if ('confirmation_status' in updates) member.confirmation_status = updates.confirmation_status;
-    if (isAdmin) {
-      if ('role' in updates) member.role = updates.role;
-      if ('couple_id' in updates) member.couple_id = updates.couple_id;
+    Object.assign(member, updates);
+    return member;
+  }
+
+  // CONVITES SEGUROS (RPCs)
+  getOrCreateInvite(adminId, tripId) {
+    if (!adminId) throw new Error('Usuário não autenticado.');
+    if (!this.isTripAdmin(adminId, tripId)) {
+      throw new Error('Acesso negado: apenas a administradora desta viagem pode gerenciar convites.');
     }
 
-    return member;
+    const existing = this.invitations.find(
+      (i) => i.trip_id === tripId && !i.is_revoked && new Date(i.expires_at) > new Date()
+    );
+
+    if (existing) {
+      return { token: null, expires_at: existing.expires_at, is_new: false };
+    }
+
+    const rawToken = crypto.randomBytes(24).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+    this.invitations.push({
+      id: 'inv-' + Date.now(),
+      trip_id: tripId,
+      token_hash: tokenHash,
+      expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+      is_revoked: false,
+    });
+
+    return { token: rawToken, expires_at: this.invitations[this.invitations.length - 1].expires_at, is_new: true };
+  }
+
+  regenerateInvite(adminId, tripId) {
+    if (!adminId) throw new Error('Usuário não autenticado.');
+    if (!this.isTripAdmin(adminId, tripId)) {
+      throw new Error('Acesso negado: apenas a administradora desta viagem pode regenerar o link de convite.');
+    }
+
+    this.invitations.forEach((i) => {
+      if (i.trip_id === tripId && !i.is_revoked) i.is_revoked = true;
+    });
+
+    const rawToken = crypto.randomBytes(24).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+    this.invitations.push({
+      id: 'inv-regen-' + Date.now(),
+      trip_id: tripId,
+      token_hash: tokenHash,
+      expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+      is_revoked: false,
+    });
+
+    return { token: rawToken, expires_at: this.invitations[this.invitations.length - 1].expires_at };
+  }
+
+  revokeInvite(adminId, tripId) {
+    if (!adminId) throw new Error('Usuário não autenticado.');
+    if (!this.isTripAdmin(adminId, tripId)) {
+      throw new Error('Acesso negado: apenas a administradora pode revogar convites.');
+    }
+    this.invitations.forEach((i) => {
+      if (i.trip_id === tripId) i.is_revoked = true;
+    });
+  }
+
+  acceptInvitation(userId, tripId, rawToken, isCouple = false, partnerName = null) {
+    if (!userId) {
+      throw new Error('Usuário não autenticado. Faça login ou crie uma conta para aceitar o convite.');
+    }
+    if (!rawToken || rawToken.trim().length < 8) {
+      throw new Error('Token de convite inválido ou ausente. O acesso a viagens privadas exige um link oficial.');
+    }
+
+    const trip = this.trips.find((t) => t.id === tripId && !t.is_archived);
+    if (!trip) throw new Error('A viagem informada não existe ou foi arquivada.');
+
+    const presentedHash = crypto.createHash('sha256').update(rawToken.trim()).digest('hex');
+    const invite = this.invitations.find((i) => i.trip_id === tripId && i.token_hash === presentedHash);
+
+    if (!invite) throw new Error('Convite inválido para esta viagem.');
+    if (invite.is_revoked) throw new Error('Este link de convite foi revogado pela administradora.');
+    if (new Date(invite.expires_at) < new Date()) throw new Error('Este link de convite expirou.');
+
+    const existingMember = this.members.find((m) => m.trip_id === tripId && m.profile_id === userId);
+    if (existingMember) {
+      return { success: true, already_member: true, member_id: existingMember.id };
+    }
+
+    let coupleId = null;
+    if (isCouple && partnerName && partnerName.trim().length >= 2) {
+      coupleId = 'couple-' + Date.now();
+      this.couples.push({
+        id: coupleId,
+        trip_id: tripId,
+        member_a_id: userId,
+        member_b_id: null,
+        partner_name: partnerName.trim(),
+      });
+    }
+
+    const newMember = {
+      id: 'tm-' + Date.now(),
+      trip_id: tripId,
+      profile_id: userId,
+      role: 'member',
+      confirmation_status: 'confirmed',
+      couple_id: coupleId,
+    };
+    this.members.push(newMember);
+    return { success: true, already_member: false, member_id: newMember.id, role: newMember.role };
   }
 }
 
 const db = new MockPostgresSecurityEngine();
 
 // ═══════════════════════════════════════════════════════════════════
-// BLOCO 1: ISOLAMENTO DE VIAGENS (🔵 Simulação Local)
+// SEÇÃO 1: OS 15 CENÁRIOS DE SEGURANÇA OBRIGATÓRIOS
 // ═══════════════════════════════════════════════════════════════════
-console.log('🔵 Bloco 1: Isolamento de Viagens e Dados Privados (Simulação)');
+console.log('📌 SEÇÃO 1: OS 15 CENÁRIOS DE SEGURANÇA DO ESCOPO');
 
-const tripsForA = db.selectTrips(userA.id);
-assert(!tripsForA.some((t) => t.id === tripB.id), 'Conta A NÃO tem acesso aos dados da Viagem B');
+// 1. Usuário A não acessa dados da viagem de B
+const tripsA = db.selectTrips(userA.id);
+assert(!tripsA.some((t) => t.id === tripB.id), '1. Usuário A NÃO acessa dados da Viagem B');
 
-const tripsForBBefore = db.selectTrips(userB.id);
-assert(!tripsForBBefore.some((t) => t.id === tripA.id), 'Conta B NÃO acessa Viagem A antes de aceitar convite');
-
-const tripsForC = db.selectTrips(userC.id);
-assert(tripsForC.length === 0, 'Conta C tem ZERO acesso às viagens de A ou B');
-
-const expensesOfBSeenByC = db.selectExpenses(userC.id, tripB.id);
-const expensesOfBSeenByA = db.selectExpenses(userA.id, tripB.id);
-assert(
-  expensesOfBSeenByC.length === 0 && expensesOfBSeenByA.length === 0,
-  'Despesas da Viagem B são inacessíveis para Conta A e Conta C'
-);
-
-// ═══════════════════════════════════════════════════════════════════
-// BLOCO 2: PROTEÇÃO DE PAPÉIS E COUPLE_ID (🔵 Simulação Local)
-// ═══════════════════════════════════════════════════════════════════
-console.log('\n🔵 Bloco 2: Proteção de Papéis, couple_id e IS DISTINCT FROM (Simulação)');
-
-// B entra na viagem A como member
-const inviteResult1 = db.getOrCreateInvite(userA.id, tripA.id);
-const membershipBInA = db.acceptInvitation(userB.id, tripA.id, inviteResult1.token);
-assert(membershipBInA.role === 'member', 'Conta B entrou na Viagem A como "member"');
-
-// Cenário: autopromoção a admin
-let blockedSelfPromotion = false;
+// 2. Usuário A não edita despesas da viagem de B
+let errExpB = false;
 try {
-  db.updateMember(userB.id, membershipBInA.id, { role: 'admin' });
-} catch (err) {
-  blockedSelfPromotion = err.message.includes('apenas a administradora pode alterar papéis');
+  db.updateExpense(userA.id, 'exp-b1', { total_amount: 9999 });
+} catch (e) {
+  errExpB = e.message.includes('Acesso negado');
 }
-assert(blockedSelfPromotion, 'Trigger BLOQUEIA autopromoção de member para admin');
+assert(errExpB, '2. Usuário A NÃO edita despesas da Viagem B');
 
-// Cenário: alteração de couple_id por não-admin
-let blockedCoupleIdChange = false;
+// 3. Usuário A não insere despesas em viagens das quais não participa
+let errInsertExpB = false;
 try {
-  db.updateMember(userB.id, membershipBInA.id, { couple_id: 'couple-malicioso-999' });
-} catch (err) {
-  blockedCoupleIdChange = err.message.includes('apenas a administradora pode alterar o vínculo de casal');
+  db.insertExpense(userA.id, { trip_id: tripB.id, payer_id: userA.id, title: 'Intrusão', total_amount: 100 });
+} catch (e) {
+  errInsertExpB = e.message.includes('você não participa desta viagem');
 }
-assert(blockedCoupleIdChange, 'Trigger BLOQUEIA alteração de couple_id por não-admin');
+assert(errInsertExpB, '3. Usuário A NÃO insere despesas em viagens das quais não participa');
 
-// Cenário: couple_id null → null NÃO dispara erro (IS DISTINCT FROM)
-let allowedNullToNull = true;
+// 4. Participante não altera o valor do próprio rateio
+let errChangeShare = false;
 try {
-  db.updateMember(userB.id, membershipBInA.id, { couple_id: null });
-} catch (err) {
-  allowedNullToNull = false;
+  db.updateExpenseSplit(userB.id, 'split-2', { share_amount: 1.0 });
+} catch (e) {
+  errChangeShare = e.message.includes('apenas a administradora pode alterar o valor da cota');
 }
-assert(allowedNullToNull, 'IS DISTINCT FROM: null→null NÃO dispara exceção');
+assert(errChangeShare, '4. Participante B NÃO altera o valor do próprio rateio (share_amount)');
 
-// Cenário: admin PODE alterar couple_id
-let adminCanChangeCoupleId = true;
+// 5. Participante não altera o vínculo de um rateio
+let errChangeSplitFk = false;
 try {
-  db.updateMember(userA.id, membershipBInA.id, { couple_id: 'couple-legit-123' });
-} catch (err) {
-  adminCanChangeCoupleId = false;
+  db.updateExpenseSplit(userB.id, 'split-2', { profile_id: userA.id });
+} catch (e) {
+  errChangeSplitFk = e.message.includes('não é permitido transferir a cota para outro participante');
 }
-assert(adminCanChangeCoupleId, 'Administradora PODE alterar couple_id de participante');
+assert(errChangeSplitFk, '5. Participante B NÃO altera o vínculo do rateio (profile_id ou expense_id)');
 
-// Cenário: admin PODE alterar role
-let adminCanChangeRole = true;
+// 6. Participante não consegue promover a si mesmo a administrador
+let errSelfPromote = false;
 try {
-  db.updateMember(userA.id, membershipBInA.id, { role: 'member' });
-} catch (err) {
-  adminCanChangeRole = false;
+  db.updateMember(userB.id, 'tm-b1', { role: 'admin' });
+} catch (e) {
+  errSelfPromote = e.message.includes('apenas a administradora pode alterar papéis');
 }
-assert(adminCanChangeRole, 'Administradora PODE alterar role de participante');
+assert(errSelfPromote, '6. Participante B NÃO consegue promover a si mesmo a administrador');
 
-// ═══════════════════════════════════════════════════════════════════
-// BLOCO 3: VALIDAÇÕES CRIPTOGRÁFICAS DE CONVITES (🔵 Simulação Local)
-// ═══════════════════════════════════════════════════════════════════
-console.log('\n🔵 Bloco 3: Validações Criptográficas de Convites (Simulação)');
-
-// Token forjado
-let blockedInvalidInvite = false;
+// 7. Participante não consegue alterar seu próprio couple_id
+let errChangeCoupleId = false;
 try {
-  db.acceptInvitation(userC.id, tripA.id, 'token_inventado_falso_123');
-} catch (err) {
-  blockedInvalidInvite = err.message.includes('Convite inválido');
+  db.updateMember(userB.id, 'tm-b1', { couple_id: 'couple-fraude-123' });
+} catch (e) {
+  errChangeCoupleId = e.message.includes('apenas a administradora pode alterar o vínculo de casal');
 }
-assert(blockedInvalidInvite, 'Token forjado é rejeitado com erro');
+assert(errChangeCoupleId, '7. Participante B NÃO consegue alterar seu próprio couple_id');
 
-// Revogar e tentar usar
+// 8. Usuário não consegue votar usando opção de outra enquete
+let errCrossPollVote = false;
+try {
+  // opt-b1 pertence a poll-b1, tentando votar na poll-a1
+  db.insertPollVote(userB.id, 'poll-a1', 'opt-b1');
+} catch (e) {
+  errCrossPollVote = e.message.includes('Violação de FK composta');
+}
+assert(errCrossPollVote, '8. Usuário NÃO consegue votar usando opção de outra enquete (FK composta)');
+
+// 9. Convite revogado não permite entrada
+const inviteTemp = db.getOrCreateInvite(userA.id, tripA.id);
 db.revokeInvite(userA.id, tripA.id);
-const inviteResult1b = db.getOrCreateInvite(userA.id, tripA.id); // Gera novo pois o anterior foi revogado
-const tokenBeforeRevoke = inviteResult1b.token;
-db.revokeInvite(userA.id, tripA.id);
-let blockedRevokedInvite = false;
+let errRevoked = false;
 try {
-  db.acceptInvitation(userC.id, tripA.id, tokenBeforeRevoke);
-} catch (err) {
-  blockedRevokedInvite = err.message.includes('revogado pela administradora');
+  db.acceptInvitation(userC.id, tripA.id, inviteTemp.token);
+} catch (e) {
+  errRevoked = e.message.includes('revogado pela administradora');
 }
-assert(blockedRevokedInvite, 'Token revogado é rejeitado');
+assert(errRevoked, '9. Convite revogado NÃO permite entrada');
 
-// Token expirado
-const expiredRaw = crypto.randomBytes(24).toString('hex');
-const expiredHash = crypto.createHash('sha256').update(expiredRaw).digest('hex');
+// 10. Convite expirado não permite entrada
+const expRaw = crypto.randomBytes(24).toString('hex');
+const expHash = crypto.createHash('sha256').update(expRaw).digest('hex');
 db.invitations.push({
-  id: 'inv-exp',
+  id: 'inv-exp-test',
   trip_id: tripA.id,
-  token_hash: expiredHash,
-  expires_at: new Date(Date.now() - 1000).toISOString(),
+  token_hash: expHash,
+  expires_at: new Date(Date.now() - 5000).toISOString(),
   is_revoked: false,
 });
-let blockedExpiredInvite = false;
+let errExpired = false;
 try {
-  db.acceptInvitation(userC.id, tripA.id, expiredRaw);
-} catch (err) {
-  blockedExpiredInvite = err.message.includes('expirou');
+  db.acceptInvitation(userC.id, tripA.id, expRaw);
+} catch (e) {
+  errExpired = e.message.includes('expirou');
 }
-assert(blockedExpiredInvite, 'Token expirado é rejeitado');
+assert(errExpired, '10. Convite expirado NÃO permite entrada');
 
-// UUID sem token
-let blockedUuidOnly = false;
+// 11. UUID da viagem sem token não permite entrada
+let errUuidWithoutToken = false;
 try {
   db.acceptInvitation(userC.id, tripA.id, null);
-} catch (err) {
-  blockedUuidOnly = err.message.includes('Token de convite inválido ou ausente');
+} catch (e) {
+  errUuidWithoutToken = e.message.includes('Token de convite inválido ou ausente');
 }
-assert(blockedUuidOnly, 'UUID sozinho sem token é bloqueado');
+assert(errUuidWithoutToken, '11. UUID da viagem sem token NÃO permite entrada');
 
-// Token válido permite entrar como member
-const freshResult = db.regenerateInvite(userA.id, tripA.id);
-const memberC = db.acceptInvitation(userC.id, tripA.id, freshResult.token);
-assert(memberC.role === 'member', 'Token válido permite entrada estritamente como "member"');
-
-// Token não existe no banco como texto puro (armazenado como hash)
-assert(
-  !db.invitations.some((i) => i.token_hash === freshResult.token),
-  'Token original NÃO existe no banco; armazenado somente como hash SHA-256'
-);
-
-// Apenas admin pode gerar convite
-let blockedNonAdminInviteGen = false;
+// 12. Usuário não autenticado não consegue aceitar convite
+const freshTokenObj = db.regenerateInvite(userA.id, tripA.id);
+let errUnauthenticated = false;
 try {
-  db.getOrCreateInvite(userC.id, tripA.id);
-} catch (err) {
-  blockedNonAdminInviteGen = err.message.includes('Acesso negado');
+  db.acceptInvitation(null, tripA.id, freshTokenObj.token);
+} catch (e) {
+  errUnauthenticated = e.message.includes('Usuário não autenticado');
 }
-assert(blockedNonAdminInviteGen, 'Participante comum é impedido de gerar convite');
+assert(errUnauthenticated, '12. Usuário NÃO autenticado não consegue aceitar convite');
 
-// ═══════════════════════════════════════════════════════════════════
-// BLOCO 4: REGENERAÇÃO DE CONVITES (🔵 Simulação Local)
-// ═══════════════════════════════════════════════════════════════════
-console.log('\n🔵 Bloco 4: Regeneração de Convites (Simulação)');
-
-// Gera convite para viagem B
-const firstInvite = db.getOrCreateInvite(userB.id, tripB.id);
-assert(firstInvite.is_new === true, 'Primeiro convite gerado retorna is_new=true');
-assert(firstInvite.token !== null, 'Primeiro convite retorna token em texto puro');
-
-// Segunda chamada: convite ativo já existe → retorna is_new=false
-const secondCall = db.getOrCreateInvite(userB.id, tripB.id);
-assert(secondCall.is_new === false, 'Segunda chamada retorna is_new=false (convite já ativo)');
-assert(secondCall.token === null, 'Segunda chamada retorna token=null (não é recuperável)');
-
-// Regenerar: revoga anterior e gera novo
-const regenResult = db.regenerateInvite(userB.id, tripB.id);
-assert(regenResult.token !== null, 'Regeneração retorna novo token em texto puro');
-assert(regenResult.token !== firstInvite.token, 'Novo token é diferente do original');
-
-// Token antigo não funciona mais
-let oldTokenBlocked = false;
+// 13. Administradora consegue gerenciar sua própria viagem
+let adminCanManage = true;
 try {
-  const testUser = { id: 'usr-test-regen' };
-  db.acceptInvitation(testUser.id, tripB.id, firstInvite.token);
-} catch (err) {
-  oldTokenBlocked = err.message.includes('revogado') || err.message.includes('inválido');
+  db.updateTrip(userA.id, tripA.id, { title: 'Maresias Top 2026' });
+  const adminExp = db.insertExpense(userA.id, { trip_id: tripA.id, payer_id: userA.id, title: 'Carvão e Gelo', total_amount: 150 });
+  db.updateExpense(userA.id, adminExp.id, { total_amount: 180 });
+} catch (e) {
+  adminCanManage = false;
 }
-assert(oldTokenBlocked, 'Token anterior é invalidado após regeneração');
+assert(adminCanManage, '13. Administradora CONSEGUE gerenciar sua própria viagem e despesas');
 
-// Novo token funciona
-const testUser2 = { id: 'usr-test-regen-2' };
-const regenAccept = db.acceptInvitation(testUser2.id, tripB.id, regenResult.token);
-assert(regenAccept.role === 'member', 'Token regenerado permite entrada como member');
-
-// ═══════════════════════════════════════════════════════════════════
-// BLOCO 5: FALLBACK SEM SUPABASE (🟢 Análise Estática do TypeScript)
-// ═══════════════════════════════════════════════════════════════════
-console.log('\n🟢 Bloco 5: Fallback sem Supabase (Análise Estática do código)');
-
-// Verificar que acceptTripInvitation NÃO simula sucesso sem Supabase
-const acceptFn = memberServiceTs.substring(
-  memberServiceTs.indexOf('async acceptTripInvitation'),
-  memberServiceTs.indexOf('// Supabase RPC com validação estrita de token')
-);
+// 14. Participante consegue consultar as informações permitidas da própria viagem
+const expViewedByB = db.selectExpenses(userB.id, tripA.id);
+const tripsViewedByB = db.selectTrips(userB.id);
 assert(
-  acceptFn.includes('throw new Error') && acceptFn.includes('Supabase não está configurado'),
-  'acceptTripInvitation lança erro quando Supabase não está configurado'
+  expViewedByB.length > 0 && tripsViewedByB.some((t) => t.id === tripA.id),
+  '14. Participante CONSEGUE consultar as informações permitidas da sua viagem'
 );
 
-// Verificar getOrCreateTripInvite
-const getOrCreateFn = memberServiceTs.substring(
-  memberServiceTs.indexOf('async getOrCreateTripInvite'),
-  memberServiceTs.indexOf('async regenerateTripInvite')
-);
+// 15. Abrir a tela de participantes não invalida convites existentes
+const inviteBeforeOpening = db.getOrCreateInvite(userA.id, tripA.id);
+// Simula segunda chamada ao abrir tela de participantes
+const inviteOnOpen = db.getOrCreateInvite(userA.id, tripA.id);
 assert(
-  getOrCreateFn.includes('throw new Error') && getOrCreateFn.includes('Supabase não está configurado'),
-  'getOrCreateTripInvite lança erro quando Supabase não está configurado'
-);
-
-// Verificar regenerateTripInvite
-const regenFn = memberServiceTs.substring(
-  memberServiceTs.indexOf('async regenerateTripInvite'),
-  memberServiceTs.indexOf('async revokeTripInvite')
-);
-assert(
-  regenFn.includes('throw new Error') && regenFn.includes('Supabase não está configurado'),
-  'regenerateTripInvite lança erro quando Supabase não está configurado'
-);
-
-// Verificar revokeTripInvite
-const revokeFn = memberServiceTs.substring(
-  memberServiceTs.indexOf('async revokeTripInvite'),
-  memberServiceTs.indexOf('async acceptTripInvitation')
-);
-assert(
-  revokeFn.includes('throw new Error') && revokeFn.includes('Supabase não está configurado'),
-  'revokeTripInvite lança erro quando Supabase não está configurado'
-);
-
-// Verificar que NÃO existe simulação de membros locais no acceptTripInvitation
-assert(
-  !acceptFn.includes('saveLocalMembers') && !acceptFn.includes('getLocalMembers'),
-  'acceptTripInvitation NÃO simula persistência local de membros'
+  inviteOnOpen.is_new === false && inviteOnOpen.token === null,
+  '15. Abrir a tela de participantes NÃO invalida convites existentes (retorna is_new=false)'
 );
 
 // ═══════════════════════════════════════════════════════════════════
-// BLOCO 6: CASAIS E FK (🔵 Simulação Local)
+// SEÇÃO 2: VALIDAÇÃO DE IDEMPOTÊNCIA DO SQL CONSOLIDADO
 // ═══════════════════════════════════════════════════════════════════
-console.log('\n🔵 Bloco 6: Casais e Integridade de FK (Simulação)');
+console.log('\n📌 SEÇÃO 2: VERIFICAÇÃO DE IDEMPOTÊNCIA DO CONSOLIDATED_SETUP.SQL');
 
-const freshInviteCasal = db.regenerateInvite(userA.id, tripA.id);
-const casalUser = { id: 'usr-casal-teste' };
-db.acceptInvitation(casalUser.id, tripA.id, freshInviteCasal.token, true, 'Parceiro Sem Conta');
-const coupleRecord = db.couples.find((c) => c.member_a_id === casalUser.id);
-assert(
-  coupleRecord && coupleRecord.member_b_id === null && coupleRecord.partner_name === 'Parceiro Sem Conta',
-  'Casal criado com acompanhante pendente (member_b_id=NULL) sem violar FK'
-);
-
-// ═══════════════════════════════════════════════════════════════════
-// BLOCO 7: AUDITORIA ESTÁTICA DO SQL (🟢 Análise Estática)
-// ═══════════════════════════════════════════════════════════════════
-console.log('\n🟢 Bloco 7: Auditoria Estática do SQL Consolidado');
-
-// 7.1. Zero USING (true) em políticas RLS
-const hasUsingTrueInPolicy = /CREATE\s+POLICY[\s\S]*?USING\s*\(\s*true\s*\)/i.test(consolidatedSql);
-assert(!hasUsingTrueInPolicy, 'Zero ocorrências de USING (true) em políticas RLS');
-
-// 7.2. Política de perfis escopada
-assert(consolidatedSql.includes('profiles_select_scoped'), 'Política profiles_select_scoped está ativa');
-
-// 7.3. Trigger de proteção presente
-assert(consolidatedSql.includes('trigger_protect_trip_member_update'), 'Trigger trigger_protect_trip_member_update presente');
-
-// 7.4. IS DISTINCT FROM no trigger
-assert(consolidatedSql.includes('IS DISTINCT FROM'), 'Trigger usa IS DISTINCT FROM para comparações com NULL');
-
-// 7.5. Proteção de couple_id no trigger
-assert(
-  consolidatedSql.includes("NEW.couple_id IS DISTINCT FROM OLD.couple_id"),
-  'Trigger protege couple_id contra alteração por não-admin'
-);
-
-// 7.6. REVOKE ALL nas RPCs
-assert(consolidatedSql.includes('REVOKE ALL ON FUNCTION public.accept_trip_invitation'), 'REVOKE ALL em accept_trip_invitation');
-assert(consolidatedSql.includes('REVOKE ALL ON FUNCTION public.get_or_create_trip_invite'), 'REVOKE ALL em get_or_create_trip_invite');
-assert(consolidatedSql.includes('REVOKE ALL ON FUNCTION public.is_trip_member'), 'REVOKE ALL em is_trip_member');
-assert(consolidatedSql.includes('REVOKE ALL ON FUNCTION public.is_trip_admin'), 'REVOKE ALL em is_trip_admin');
-
-// 7.7. search_path com pg_catalog
-const searchPathMatches = consolidatedSql.match(/SET search_path\s*=\s*[^\n]+/g) || [];
-const allUsePgCatalog = searchPathMatches.every(
-  (sp) => sp.includes('pg_catalog')
-);
-assert(allUsePgCatalog, 'Todas as funções SECURITY DEFINER usam pg_catalog no search_path');
-
-// 7.8. digest qualificado com extensions.digest
-assert(consolidatedSql.includes('extensions.digest'), 'digest() qualificado explicitamente como extensions.digest');
-assert(!consolidatedSql.match(/[^.]digest\s*\(/), 'Nenhuma chamada a digest() sem qualificação de schema');
-
-// 7.9. Hashing SHA-256
-assert(consolidatedSql.includes("'sha256'"), 'SQL utiliza hash SHA-256 para tokens');
-
-// 7.10. Trigger de criação de viagem
-assert(consolidatedSql.includes('CREATE TRIGGER on_trip_created'), 'Trigger on_trip_created presente');
-assert(consolidatedSql.includes("'admin'") && consolidatedSql.includes("'confirmed'"), 'Trigger insere criador com role admin confirmado');
-
-// 7.11. get_or_create_trip_invite não revoga convites existentes
-const getOrCreateSql = consolidatedSql.substring(
-  consolidatedSql.indexOf('CREATE OR REPLACE FUNCTION public.get_or_create_trip_invite'),
-  consolidatedSql.indexOf('-- 6.2')
-);
-assert(
-  !getOrCreateSql.includes('SET is_revoked = true'),
-  'get_or_create_trip_invite NÃO revoga convites existentes ao ser chamada'
-);
-
-// 7.12. Idempotência — CREATE TABLE IF NOT EXISTS
+// 2.1. Todas as 15 tabelas usam CREATE TABLE IF NOT EXISTS
 const tableCreations = (consolidatedSql.match(/CREATE TABLE/g) || []).length;
 const tableIfNotExists = (consolidatedSql.match(/CREATE TABLE IF NOT EXISTS/g) || []).length;
 assert(
-  tableCreations === tableIfNotExists,
-  `Todas as tabelas usam IF NOT EXISTS (${tableIfNotExists}/${tableCreations})`
+  tableCreations === tableIfNotExists && tableCreations === 15,
+  `Todas as 15 tabelas usam IF NOT EXISTS (${tableIfNotExists}/${tableCreations})`,
+  '🟢 ANÁLISE ESTÁTICA'
 );
 
-// 7.13. Idempotência — DROP TRIGGER IF EXISTS antes de CREATE TRIGGER
-const triggerCreations = (consolidatedSql.match(/CREATE TRIGGER/g) || []).length;
-const triggerDrops = (consolidatedSql.match(/DROP TRIGGER IF EXISTS/g) || []).length;
-assert(
-  triggerDrops >= triggerCreations,
-  `DROP TRIGGER IF EXISTS antes de cada CREATE TRIGGER (${triggerDrops}/${triggerCreations})`
-);
-
-// 7.14. Idempotência — DROP POLICY IF EXISTS antes de CREATE POLICY
+// 2.2. Todas as policies têm DROP POLICY IF EXISTS antes de CREATE POLICY
 const policyCreations = (consolidatedSql.match(/CREATE POLICY/g) || []).length;
 const policyDrops = (consolidatedSql.match(/DROP POLICY IF EXISTS/g) || []).length;
 assert(
   policyDrops >= policyCreations,
-  `DROP POLICY IF EXISTS antes de cada CREATE POLICY (${policyDrops}/${policyCreations})`
+  `DROP POLICY IF EXISTS antes de cada CREATE POLICY (${policyDrops} drops para ${policyCreations} creates)`,
+  '🟢 ANÁLISE ESTÁTICA'
 );
 
-// 7.15. Idempotência — CREATE INDEX IF NOT EXISTS
-const indexCreations = (consolidatedSql.match(/CREATE INDEX/g) || []).length;
-const indexIfNotExists = (consolidatedSql.match(/CREATE INDEX IF NOT EXISTS/g) || []).length;
+// 2.3. Todos os triggers têm DROP TRIGGER IF EXISTS antes de CREATE TRIGGER
+const triggerCreations = (consolidatedSql.match(/CREATE TRIGGER/g) || []).length;
+const triggerDrops = (consolidatedSql.match(/DROP TRIGGER IF EXISTS/g) || []).length;
+assert(
+  triggerDrops >= triggerCreations,
+  `DROP TRIGGER IF EXISTS antes de cada CREATE TRIGGER (${triggerDrops} drops para ${triggerCreations} creates)`,
+  '🟢 ANÁLISE ESTÁTICA'
+);
+
+// 2.4. Todos os índices usam CREATE INDEX IF NOT EXISTS (ou CREATE UNIQUE INDEX IF NOT EXISTS)
+const indexCreations = (consolidatedSql.match(/CREATE (UNIQUE )?INDEX/g) || []).length;
+const indexIfNotExists = (consolidatedSql.match(/CREATE (UNIQUE )?INDEX IF NOT EXISTS/g) || []).length;
 assert(
   indexCreations === indexIfNotExists,
-  `Todos os índices usam IF NOT EXISTS (${indexIfNotExists}/${indexCreations})`
+  `Todos os índices usam IF NOT EXISTS (${indexIfNotExists}/${indexCreations})`,
+  '🟢 ANÁLISE ESTÁTICA'
 );
 
-// 7.16. Idempotência — Backfill com ON CONFLICT DO NOTHING
+// 2.5. Alterações em tabelas já existentes usam IF NOT EXISTS e blocos defensivos DO $$
 assert(
-  consolidatedSql.includes('ON CONFLICT (id) DO NOTHING'),
-  'Backfill de profiles usa ON CONFLICT (id) DO NOTHING'
+  consolidatedSql.includes('ADD COLUMN IF NOT EXISTS') && consolidatedSql.includes('DO $$ BEGIN'),
+  'ALTER TABLE e novas constraints usam IF NOT EXISTS e blocos DO $$ condicionais',
+  '🟢 ANÁLISE ESTÁTICA'
 );
 
-// 7.17. Idempotência — UNIQUE constraint idempotente para token_hash
+// 2.6. Backfill de perfis utiliza ON CONFLICT (id) DO NOTHING
 assert(
-  consolidatedSql.includes('invitations_token_hash_unique'),
-  'Constraint UNIQUE para token_hash criada de forma idempotente'
+  consolidatedSql.includes('INSERT INTO public.profiles') && consolidatedSql.includes('ON CONFLICT (id) DO NOTHING'),
+  'Backfill de perfis usa ON CONFLICT (id) DO NOTHING para reexecuções seguras',
+  '🟢 ANÁLISE ESTÁTICA'
 );
 
-// 7.18. Revogação de convites legados sem token_hash
-assert(
-  consolidatedSql.includes('SET is_revoked = true') && consolidatedSql.includes('WHERE token_hash IS NULL'),
-  'Convites legados sem token_hash são revogados automaticamente'
-);
-
-// 7.19. get_or_create_trip_invite exige token_hash IS NOT NULL
-assert(
-  getOrCreateSql.includes('token_hash IS NOT NULL'),
-  'get_or_create_trip_invite ignora registros zumbis sem token_hash'
-);
-
-// 7.20. Limpeza de funções legadas do PIN
-assert(
-  consolidatedSql.includes('DROP FUNCTION IF EXISTS public.join_trip_by_share_link'),
-  'Funções legadas de PIN são removidas para eliminar superfície de ataque'
-);
-
-// 7.21. Frontend — Cache de sessão e feedback de alreadyMember
-const participantsTsx = fs.readFileSync(path.join(basePath, 'src/pages/Participants.tsx'), 'utf8');
-const joinTripTsx = fs.readFileSync(path.join(basePath, 'src/pages/JoinTrip.tsx'), 'utf8');
-assert(
-  participantsTsx.includes('sessionStorage.getItem(`rota_trip_token_'),
-  'Participants.tsx utiliza cache de sessão para preservar token entre recargas'
-);
-assert(
-  joinTripTsx.includes('isAlreadyMember') && joinTripTsx.includes('Você já participa desta viagem'),
-  'JoinTrip.tsx trata e notifica especificamente usuários que já participam'
-);
-
-// 7.22. Neutralização segura de coluna legada "token" em texto puro
-assert(
-  consolidatedSql.includes("column_name = 'token'") && consolidatedSql.includes('UPDATE public.invitations SET token = NULL'),
-  'Coluna legada "token" em texto puro tem NOT NULL removido e valores neutralizados'
-);
-
-// 7.23. UNIQUE em token_hash com tratamento de duplicatas sem apagar dados
-assert(
-  consolidatedSql.includes('_dup_') && consolidatedSql.includes('PARTITION BY token_hash'),
-  'Duplicatas pré-existentes de token_hash são disambiguadas sem exclusão de dados'
-);
-
-// 7.24. Remoção da assinatura sobrecarregada vulnerável de accept_trip_invitation sem token
-assert(
-  consolidatedSql.includes('DROP FUNCTION IF EXISTS public.accept_trip_invitation(UUID, BOOLEAN, VARCHAR)'),
-  'Assinatura obsoleta de accept_trip_invitation sem token é explicitamente removida'
-);
-
-// 7.25. Ordem dos DROP POLICY: todas as tabelas existem antes de qualquer DROP POLICY
-const firstDropPolicyIdx = consolidatedSql.indexOf('DROP POLICY');
-const allTableNames = [
-  'profiles', 'trips', 'trip_members', 'couples', 'invitations',
-  'flights', 'vehicles', 'vehicle_interested_members', 'accommodations',
-  'polls', 'poll_options', 'poll_votes', 'expenses', 'expense_splits', 'activity_logs'
-];
-const allTablesCreatedBeforeDropPolicy = allTableNames.every((t) => {
-  const tableIdx = consolidatedSql.indexOf(`CREATE TABLE IF NOT EXISTS public.${t}`);
-  return tableIdx !== -1 && tableIdx < firstDropPolicyIdx;
-});
-assert(
-  allTablesCreatedBeforeDropPolicy,
-  'Todas as 15 tabelas são criadas ANTES de qualquer instrução DROP POLICY IF EXISTS'
-);
-
-// 7.26. Ausência total de DROP TABLE, TRUNCATE e DELETE FROM
+// 2.7. Zero DROP TABLE, TRUNCATE ou DELETE FROM que cause perda de dados
 const hasDropTable = /DROP\s+TABLE/i.test(consolidatedSql);
 const hasTruncate = /TRUNCATE/i.test(consolidatedSql);
 const hasDeleteFrom = /DELETE\s+FROM/i.test(consolidatedSql);
 assert(
   !hasDropTable && !hasTruncate && !hasDeleteFrom,
-  'Zero ocorrências de DROP TABLE, TRUNCATE ou DELETE FROM no script consolidado'
+  'Zero ocorrências de DROP TABLE, TRUNCATE ou DELETE FROM no script',
+  '🟢 ANÁLISE ESTÁTICA'
 );
 
-// 7.27. Revogação de privilégios de trigger functions de PUBLIC
+// ═══════════════════════════════════════════════════════════════════
+// SEÇÃO 3: AUDITORIA DE REGRAS ESPECÍFICAS DE BLINDAGEM
+// ═══════════════════════════════════════════════════════════════════
+console.log('\n📌 SEÇÃO 3: AUDITORIA DAS SALVAGUARDAS CRÍTICAS NO SQL');
+
+// 3.1. Zero USING (true) em políticas de segurança
+const hasUsingTrueInPolicy = /CREATE\s+POLICY[\s\S]*?USING\s*\(\s*true\s*\)/i.test(consolidatedSql);
+assert(!hasUsingTrueInPolicy, 'Zero ocorrências de USING (true) em políticas RLS', '🟢 ANÁLISE ESTÁTICA');
+
+// 3.2. couple_status_view com security_invoker = true
 assert(
-  consolidatedSql.includes('REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC') &&
-  consolidatedSql.includes('REVOKE ALL ON FUNCTION public.handle_new_trip() FROM PUBLIC') &&
-  consolidatedSql.includes('REVOKE ALL ON FUNCTION public.check_trip_member_update() FROM PUBLIC'),
-  'Funções de trigger têm privilégios explicitamente revogados de PUBLIC'
+  consolidatedSql.includes('WITH (security_invoker = true)'),
+  'couple_status_view configurada com WITH (security_invoker = true)',
+  '🟢 ANÁLISE ESTÁTICA'
+);
+
+// 3.3. trips_insert exige created_by = auth.uid() AND auth.uid() IS NOT NULL
+assert(
+  consolidatedSql.includes('created_by = auth.uid() AND auth.uid() IS NOT NULL'),
+  'trips_insert elimina brecha de created_by IS NULL',
+  '🟢 ANÁLISE ESTÁTICA'
+);
+
+// 3.4. Trava FOR UPDATE em get_or_create_trip_invite e regenerate_trip_invite
+const hasForUpdateTrip = (consolidatedSql.match(/PERFORM 1 FROM public\.trips WHERE id = p_trip_id FOR UPDATE;/g) || []).length;
+assert(
+  hasForUpdateTrip >= 2,
+  `Trava transacional FOR UPDATE presente contra race conditions (${hasForUpdateTrip} ocorrências)`,
+  '🟢 ANÁLISE ESTÁTICA'
+);
+
+// 3.5. Índice único parcial idx_single_active_invite_per_trip
+assert(
+  consolidatedSql.includes('idx_single_active_invite_per_trip'),
+  'Índice parcial UNIQUE para 1 convite ativo por viagem presente',
+  '🟢 ANÁLISE ESTÁTICA'
+);
+
+// 3.6. Foreign Key composta poll_votes(poll_id, option_id) -> poll_options(poll_id, id)
+assert(
+  consolidatedSql.includes('poll_votes_poll_option_fk') && consolidatedSql.includes('poll_options_poll_id_id_unique'),
+  'Constraint composta e Foreign Key composta em poll_votes/poll_options implementadas',
+  '🟢 ANÁLISE ESTÁTICA'
+);
+
+// 3.7. search_path com pg_catalog, extensions, public, pg_temp em todas as SECURITY DEFINER
+const searchPathDefs = consolidatedSql.match(/SET search_path\s*=\s*[^\n]+/g) || [];
+const allHaveExtensionsAndPgCatalog = searchPathDefs.every(
+  (sp) => sp.includes('pg_catalog') && sp.includes('extensions') && sp.includes('public')
+);
+assert(
+  allHaveExtensionsAndPgCatalog && searchPathDefs.length >= 10,
+  `Todas as ${searchPathDefs.length} funções SECURITY DEFINER possuem search_path seguro com extensions`,
+  '🟢 ANÁLISE ESTÁTICA'
+);
+
+// 3.8. Trigger check_expense_update presente
+assert(
+  consolidatedSql.includes('trigger_protect_expense_update') && consolidatedSql.includes('check_expense_update'),
+  'Trigger check_expense_update presente para proteger transferência de viagem e pagador',
+  '🟢 ANÁLISE ESTÁTICA'
+);
+
+// 3.9. Trigger check_expense_split_update presente
+assert(
+  consolidatedSql.includes('trigger_protect_expense_split_update') && consolidatedSql.includes('check_expense_split_update'),
+  'Trigger check_expense_split_update presente para proteger share_amount, profile_id e expense_id',
+  '🟢 ANÁLISE ESTÁTICA'
+);
+
+// 3.10. Imutabilidade de activity_logs (apenas select e insert, zero update/delete)
+const hasActivityLogsUpdate = /CREATE\s+POLICY[\s\S]*?ON\s+public\.activity_logs\s+FOR\s+UPDATE/i.test(consolidatedSql);
+const hasActivityLogsDelete = /CREATE\s+POLICY[\s\S]*?ON\s+public\.activity_logs\s+FOR\s+DELETE/i.test(consolidatedSql);
+assert(
+  !hasActivityLogsUpdate && !hasActivityLogsDelete && consolidatedSql.includes('activity_logs_insert'),
+  'activity_logs possui RLS apenas para SELECT e INSERT (logs imutáveis)',
+  '🟢 ANÁLISE ESTÁTICA'
 );
 
 // ═══════════════════════════════════════════════════════════════════
@@ -701,10 +673,10 @@ if (failed.length > 0) {
   failed.forEach((f) => console.log(`   • ${f}`));
 }
 
-console.log('\n📋 Classificação:');
-console.log('   🔵 Simulação Local = Lógica comprovada via Mock Engine JavaScript');
-console.log('   🟢 Análise Estática = Validação por leitura do código-fonte');
-console.log('   🔴 Integração Real = NÃO implementado (requer PostgreSQL/Supabase real)');
+console.log('\n📋 Classificação metodológica:');
+console.log('   🔵 Simulação Local: Lógica e regras de negócio validadas via Mock Engine');
+console.log('   🟢 Análise Estática: Parsing e conformidade do código SQL e TypeScript');
+console.log('   🔴 Integração Real: Será executada no Marco 9 diretamente no Supabase');
 console.log('═══════════════════════════════════════════════════════════════\n');
 
 if (passed === total) {

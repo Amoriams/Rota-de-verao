@@ -65,6 +65,22 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_invitations_token_hash ON public.invitations(token_hash);
 CREATE INDEX IF NOT EXISTS idx_invitations_trip_token_hash_active ON public.invitations(trip_id, token_hash) WHERE is_revoked = false;
 
+-- Garante no nível estrutural que exista no máximo 1 convite por link ativo por viagem
+UPDATE public.invitations i
+SET is_revoked = true
+WHERE i.id IN (
+  SELECT id FROM (
+    SELECT id, ROW_NUMBER() OVER (PARTITION BY trip_id ORDER BY created_at DESC) as rn
+    FROM public.invitations
+    WHERE profile_id IS NULL AND is_revoked = false
+  ) sub
+  WHERE sub.rn > 1
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_single_active_invite_per_trip
+  ON public.invitations (trip_id)
+  WHERE profile_id IS NULL AND is_revoked = false;
+
 -- 2. AJUSTE DE CASAIS (PERMITE PARCEIRO SEM CONTA PRÉVIA)
 ALTER TABLE public.couples
   ADD COLUMN IF NOT EXISTS partner_name VARCHAR(100);
@@ -79,7 +95,7 @@ CREATE OR REPLACE FUNCTION public.get_or_create_trip_invite(p_trip_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = pg_catalog, extensions, public, pg_temp
 AS $$
 DECLARE
   v_user_id UUID := auth.uid();
@@ -96,6 +112,9 @@ BEGIN
   IF NOT v_is_admin THEN
     RAISE EXCEPTION 'Acesso negado: apenas a administradora desta viagem pode visualizar ou gerar links de convite.';
   END IF;
+
+  -- Trava transacional em nível de linha para concorrência
+  PERFORM 1 FROM public.trips WHERE id = p_trip_id FOR UPDATE;
 
   -- Verifica se já existe convite ativo e não expirado
   SELECT id, expires_at INTO v_existing
@@ -142,7 +161,7 @@ CREATE OR REPLACE FUNCTION public.regenerate_trip_invite(p_trip_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = pg_catalog, extensions, public, pg_temp
 AS $$
 DECLARE
   v_user_id UUID := auth.uid();
@@ -158,6 +177,9 @@ BEGIN
   IF NOT v_is_admin THEN
     RAISE EXCEPTION 'Acesso negado: apenas a administradora desta viagem pode regenerar o link de convite.';
   END IF;
+
+  -- Trava transacional em nível de linha para concorrência
+  PERFORM 1 FROM public.trips WHERE id = p_trip_id FOR UPDATE;
 
   -- Revoga todos os convites ativos anteriores
   UPDATE public.invitations
@@ -187,7 +209,7 @@ CREATE OR REPLACE FUNCTION public.revoke_trip_invite(p_trip_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = pg_catalog, extensions, public, pg_temp
 AS $$
 DECLARE
   v_user_id UUID := auth.uid();
@@ -201,6 +223,9 @@ BEGIN
   IF NOT v_is_admin THEN
     RAISE EXCEPTION 'Acesso negado: apenas a administradora desta viagem pode revogar convites.';
   END IF;
+
+  -- Trava transacional em nível de linha para concorrência
+  PERFORM 1 FROM public.trips WHERE id = p_trip_id FOR UPDATE;
 
   UPDATE public.invitations
   SET is_revoked = true
@@ -223,7 +248,7 @@ CREATE OR REPLACE FUNCTION public.accept_trip_invitation(
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = pg_catalog, extensions, public, pg_temp
 AS $$
 DECLARE
   v_user_id UUID := auth.uid();

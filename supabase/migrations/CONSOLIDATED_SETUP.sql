@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS public.trips (
   estimated_budget_per_person NUMERIC(10, 2),
   is_archived                 BOOLEAN NOT NULL DEFAULT false,
   archived_at                 TIMESTAMPTZ,
-  created_by                  UUID REFERENCES auth.users(id) ON DELETE SET NULL DEFAULT auth.uid(),
+  created_by                  UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE DEFAULT auth.uid(),
   created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -112,6 +112,8 @@ ALTER TABLE public.trips
   ADD COLUMN IF NOT EXISTS country VARCHAR(100) DEFAULT 'Brasil',
   ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+
+ALTER TABLE public.trips ALTER COLUMN created_by SET DEFAULT auth.uid();
 
 CREATE INDEX IF NOT EXISTS idx_trips_created_by ON public.trips(created_by);
 CREATE INDEX IF NOT EXISTS idx_trips_is_archived ON public.trips(is_archived);
@@ -234,6 +236,22 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_invitations_token_hash ON public.invitations(token_hash);
 CREATE INDEX IF NOT EXISTS idx_invitations_trip_token_hash_active ON public.invitations(trip_id, token_hash) WHERE is_revoked = false;
 
+-- Garante no nível estrutural que exista no máximo 1 convite por link ativo por viagem
+UPDATE public.invitations i
+SET is_revoked = true
+WHERE i.id IN (
+  SELECT id FROM (
+    SELECT id, ROW_NUMBER() OVER (PARTITION BY trip_id ORDER BY created_at DESC) as rn
+    FROM public.invitations
+    WHERE profile_id IS NULL AND is_revoked = false
+  ) sub
+  WHERE sub.rn > 1
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_single_active_invite_per_trip
+  ON public.invitations (trip_id)
+  WHERE profile_id IS NULL AND is_revoked = false;
+
 -- 3.6. FLIGHTS — catálogo de opções de passagens aéreas
 CREATE TABLE IF NOT EXISTS public.flights (
   id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -332,7 +350,8 @@ CREATE TABLE IF NOT EXISTS public.poll_options (
   description     TEXT,
   price           NUMERIC(10, 2),
   photo_url       TEXT,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT poll_options_poll_id_id_unique UNIQUE (poll_id, id)
 );
 
 CREATE TABLE IF NOT EXISTS public.poll_votes (
@@ -341,8 +360,28 @@ CREATE TABLE IF NOT EXISTS public.poll_votes (
   option_id       UUID NOT NULL REFERENCES public.poll_options(id) ON DELETE CASCADE,
   profile_id      UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT poll_votes_unique UNIQUE (poll_id, profile_id)
+  CONSTRAINT poll_votes_unique UNIQUE (poll_id, profile_id),
+  CONSTRAINT poll_votes_poll_option_fk FOREIGN KEY (poll_id, option_id) REFERENCES public.poll_options(poll_id, id) ON DELETE CASCADE
 );
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.poll_options'::regclass
+      AND conname = 'poll_options_poll_id_id_unique'
+  ) THEN
+    ALTER TABLE public.poll_options ADD CONSTRAINT poll_options_poll_id_id_unique UNIQUE (poll_id, id);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.poll_votes'::regclass
+      AND conname = 'poll_votes_poll_option_fk'
+  ) THEN
+    ALTER TABLE public.poll_votes ADD CONSTRAINT poll_votes_poll_option_fk 
+      FOREIGN KEY (poll_id, option_id) REFERENCES public.poll_options(poll_id, id) ON DELETE CASCADE;
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS public.expenses (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -381,7 +420,8 @@ CREATE TABLE IF NOT EXISTS public.activity_logs (
 -- ─────────────────────────────────────────────────────────────
 -- PARTE 4: VIEWS
 -- ─────────────────────────────────────────────────────────────
-CREATE OR REPLACE VIEW public.couple_status_view AS
+CREATE OR REPLACE VIEW public.couple_status_view 
+WITH (security_invoker = true) AS
 SELECT
   c.id          AS couple_id,
   c.trip_id     AS trip_id,
@@ -408,6 +448,9 @@ LEFT JOIN public.profiles pb ON pb.id = c.member_b_id
 JOIN public.trip_members tma ON tma.trip_id = c.trip_id AND tma.profile_id = c.member_a_id
 LEFT JOIN public.trip_members tmb ON tmb.trip_id = c.trip_id AND tmb.profile_id = c.member_b_id;
 
+GRANT SELECT ON public.couple_status_view TO authenticated;
+REVOKE ALL ON public.couple_status_view FROM anon, PUBLIC;
+
 -- ─────────────────────────────────────────────────────────────
 -- PARTE 5: FUNÇÕES DE AUTORIZAÇÃO E GATILHOS AUTOMÁTICOS
 -- ─────────────────────────────────────────────────────────────
@@ -418,7 +461,7 @@ RETURNS BOOLEAN
 LANGUAGE sql
 SECURITY DEFINER
 STABLE
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = pg_catalog, extensions, public, pg_temp
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.trip_members
@@ -433,7 +476,7 @@ RETURNS BOOLEAN
 LANGUAGE sql
 SECURITY DEFINER
 STABLE
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = pg_catalog, extensions, public, pg_temp
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.trip_members
@@ -458,7 +501,7 @@ CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = pg_catalog, extensions, public, pg_temp
 AS $$
 BEGIN
   INSERT INTO public.profiles (id, full_name, avatar_url)
@@ -495,7 +538,7 @@ CREATE OR REPLACE FUNCTION public.handle_new_trip()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = pg_catalog, extensions, public, pg_temp
 AS $$
 BEGIN
   INSERT INTO public.trip_members (
@@ -531,7 +574,7 @@ CREATE OR REPLACE FUNCTION public.check_trip_member_update()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = pg_catalog, extensions, public, pg_temp
 AS $$
 BEGIN
   -- Se quem está executando NÃO for o administrador daquela viagem:
@@ -564,6 +607,86 @@ CREATE TRIGGER trigger_protect_trip_member_update
 
 REVOKE ALL ON FUNCTION public.check_trip_member_update() FROM PUBLIC;
 
+-- 5.6. BLINDAGEM DE EXPENSES: impede alterar a viagem e protege o pagador
+CREATE OR REPLACE FUNCTION public.check_expense_update()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, extensions, public, pg_temp
+AS $$
+BEGIN
+  -- Nenhuma operação pode transferir uma despesa para outra viagem
+  IF NEW.trip_id IS DISTINCT FROM OLD.trip_id THEN
+    RAISE EXCEPTION 'Acesso negado: não é permitido transferir uma despesa para outra viagem.';
+  END IF;
+
+  -- Se quem está executando NÃO for administrador daquela viagem:
+  IF NOT public.is_trip_admin(OLD.trip_id) THEN
+    -- Apenas o pagador original pode editar
+    IF OLD.payer_id <> auth.uid() THEN
+      RAISE EXCEPTION 'Acesso negado: você só pode editar despesas criadas por você.';
+    END IF;
+    -- Não pode alterar o pagador para outro participante
+    IF NEW.payer_id IS DISTINCT FROM OLD.payer_id THEN
+      RAISE EXCEPTION 'Acesso negado: não é permitido alterar o pagador da despesa.';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trigger_protect_expense_update ON public.expenses;
+CREATE TRIGGER trigger_protect_expense_update
+  BEFORE UPDATE ON public.expenses
+  FOR EACH ROW EXECUTE FUNCTION public.check_expense_update();
+
+REVOKE ALL ON FUNCTION public.check_expense_update() FROM PUBLIC;
+
+-- 5.7. BLINDAGEM DE EXPENSE_SPLITS: impede participante de alterar share_amount, profile_id ou expense_id
+CREATE OR REPLACE FUNCTION public.check_expense_split_update()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, extensions, public, pg_temp
+AS $$
+DECLARE
+  v_trip_id UUID;
+  v_is_admin BOOLEAN;
+BEGIN
+  SELECT trip_id INTO v_trip_id
+  FROM public.expenses
+  WHERE id = OLD.expense_id;
+
+  v_is_admin := public.is_trip_admin(v_trip_id);
+
+  -- Se quem está executando NÃO for o administrador da viagem:
+  IF NOT v_is_admin THEN
+    -- Proíbe alterar o valor da sua cota (prevenção contra redução de dívida)
+    IF NEW.share_amount IS DISTINCT FROM OLD.share_amount THEN
+      RAISE EXCEPTION 'Acesso negado: apenas a administradora pode alterar o valor da cota de rateio.';
+    END IF;
+    -- Proíbe transferir o rateio para outro participante
+    IF NEW.profile_id IS DISTINCT FROM OLD.profile_id THEN
+      RAISE EXCEPTION 'Acesso negado: não é permitido transferir a cota para outro participante.';
+    END IF;
+    -- Proíbe transferir o rateio para outra despesa
+    IF NEW.expense_id IS DISTINCT FROM OLD.expense_id THEN
+      RAISE EXCEPTION 'Acesso negado: não é permitido vincular o rateio a outra despesa.';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trigger_protect_expense_split_update ON public.expense_splits;
+CREATE TRIGGER trigger_protect_expense_split_update
+  BEFORE UPDATE ON public.expense_splits
+  FOR EACH ROW EXECUTE FUNCTION public.check_expense_split_update();
+
+REVOKE ALL ON FUNCTION public.check_expense_split_update() FROM PUBLIC;
+
 -- ─────────────────────────────────────────────────────────────
 -- PARTE 6: CONVITES SEGUROS COM HASH SHA-256 (RPCs)
 -- ─────────────────────────────────────────────────────────────
@@ -577,7 +700,7 @@ CREATE OR REPLACE FUNCTION public.get_or_create_trip_invite(p_trip_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = pg_catalog, extensions, public, pg_temp
 AS $$
 DECLARE
   v_user_id UUID := auth.uid();
@@ -594,6 +717,9 @@ BEGIN
   IF NOT v_is_admin THEN
     RAISE EXCEPTION 'Acesso negado: apenas a administradora desta viagem pode gerenciar convites.';
   END IF;
+
+  -- Trava transacional em nível de linha para concorrência
+  PERFORM 1 FROM public.trips WHERE id = p_trip_id FOR UPDATE;
 
   -- Verifica se já existe convite ativo e não expirado para esta viagem
   SELECT id, expires_at INTO v_existing
@@ -642,7 +768,7 @@ CREATE OR REPLACE FUNCTION public.regenerate_trip_invite(p_trip_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = pg_catalog, extensions, public, pg_temp
 AS $$
 DECLARE
   v_user_id UUID := auth.uid();
@@ -658,6 +784,9 @@ BEGIN
   IF NOT v_is_admin THEN
     RAISE EXCEPTION 'Acesso negado: apenas a administradora desta viagem pode regenerar o link de convite.';
   END IF;
+
+  -- Trava transacional em nível de linha para concorrência
+  PERFORM 1 FROM public.trips WHERE id = p_trip_id FOR UPDATE;
 
   UPDATE public.invitations
   SET is_revoked = true
@@ -686,7 +815,7 @@ CREATE OR REPLACE FUNCTION public.revoke_trip_invite(p_trip_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = pg_catalog, extensions, public, pg_temp
 AS $$
 DECLARE
   v_user_id UUID := auth.uid();
@@ -700,6 +829,9 @@ BEGIN
   IF NOT v_is_admin THEN
     RAISE EXCEPTION 'Acesso negado: apenas a administradora desta viagem pode revogar convites.';
   END IF;
+
+  -- Trava transacional em nível de linha para concorrência
+  PERFORM 1 FROM public.trips WHERE id = p_trip_id FOR UPDATE;
 
   UPDATE public.invitations
   SET is_revoked = true
@@ -722,7 +854,7 @@ CREATE OR REPLACE FUNCTION public.accept_trip_invitation(
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, public, pg_temp
+SET search_path = pg_catalog, extensions, public, pg_temp
 AS $$
 DECLARE
   v_user_id UUID := auth.uid();
@@ -900,7 +1032,7 @@ CREATE POLICY "trips_select"
 DROP POLICY IF EXISTS "trips_insert" ON public.trips;
 CREATE POLICY "trips_insert"
   ON public.trips FOR INSERT TO authenticated
-  WITH CHECK (created_by = auth.uid() OR created_by IS NULL);
+  WITH CHECK (created_by = auth.uid() AND auth.uid() IS NOT NULL);
 
 DROP POLICY IF EXISTS "trips_update" ON public.trips;
 CREATE POLICY "trips_update"
@@ -1125,20 +1257,30 @@ CREATE POLICY "poll_votes_insert"
     AND EXISTS (
       SELECT 1 FROM public.polls p 
       WHERE p.id = poll_votes.poll_id 
-        AND public.is_trip_member(p.trip_id)
+        AND (public.is_trip_member(p.trip_id) OR public.is_trip_admin(p.trip_id))
+        AND p.is_active = true
     )
   );
 
 DROP POLICY IF EXISTS "poll_votes_delete" ON public.poll_votes;
 CREATE POLICY "poll_votes_delete"
   ON public.poll_votes FOR DELETE TO authenticated
-  USING (profile_id = auth.uid());
+  USING (
+    profile_id = auth.uid()
+    AND EXISTS (
+      SELECT 1 FROM public.polls p
+      WHERE p.id = poll_votes.poll_id
+        AND (public.is_trip_member(p.trip_id) OR public.is_trip_admin(p.trip_id))
+        AND p.is_active = true
+    )
+  );
 
 -- 7.10. EXPENSES & RATEIO
 ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "cost_items_select_member" ON public.expenses;
 DROP POLICY IF EXISTS "cost_items_all_admin" ON public.expenses;
+DROP POLICY IF EXISTS "expenses_admin" ON public.expenses;
 DROP POLICY IF EXISTS "expenses_select" ON public.expenses;
 CREATE POLICY "expenses_select"
   ON public.expenses FOR SELECT TO authenticated
@@ -1148,15 +1290,29 @@ DROP POLICY IF EXISTS "expenses_insert" ON public.expenses;
 CREATE POLICY "expenses_insert"
   ON public.expenses FOR INSERT TO authenticated
   WITH CHECK (
-    (public.is_trip_member(trip_id) OR public.is_trip_admin(trip_id))
-    AND payer_id = auth.uid()
+    payer_id = auth.uid()
+    AND (public.is_trip_member(trip_id) OR public.is_trip_admin(trip_id))
   );
 
-DROP POLICY IF EXISTS "expenses_admin" ON public.expenses;
-CREATE POLICY "expenses_admin"
-  ON public.expenses FOR ALL TO authenticated
-  USING (public.is_trip_admin(trip_id) OR payer_id = auth.uid())
-  WITH CHECK (public.is_trip_admin(trip_id) OR payer_id = auth.uid());
+DROP POLICY IF EXISTS "expenses_update" ON public.expenses;
+CREATE POLICY "expenses_update"
+  ON public.expenses FOR UPDATE TO authenticated
+  USING (
+    public.is_trip_admin(trip_id) 
+    OR (payer_id = auth.uid() AND public.is_trip_member(trip_id))
+  )
+  WITH CHECK (
+    public.is_trip_admin(trip_id) 
+    OR (payer_id = auth.uid() AND public.is_trip_member(trip_id))
+  );
+
+DROP POLICY IF EXISTS "expenses_delete" ON public.expenses;
+CREATE POLICY "expenses_delete"
+  ON public.expenses FOR DELETE TO authenticated
+  USING (
+    public.is_trip_admin(trip_id) 
+    OR (payer_id = auth.uid() AND public.is_trip_member(trip_id))
+  );
 
 ALTER TABLE public.expense_splits ENABLE ROW LEVEL SECURITY;
 
@@ -1173,8 +1329,20 @@ CREATE POLICY "expense_splits_select"
     )
   );
 
+DROP POLICY IF EXISTS "expense_splits_insert" ON public.expense_splits;
+CREATE POLICY "expense_splits_insert"
+  ON public.expense_splits FOR INSERT TO authenticated
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.expenses e 
+      WHERE e.id = expense_splits.expense_id 
+        AND (public.is_trip_admin(e.trip_id) OR (e.payer_id = auth.uid() AND public.is_trip_member(e.trip_id)))
+    )
+  );
+
 DROP POLICY IF EXISTS "expense_splits_update_status" ON public.expense_splits;
-CREATE POLICY "expense_splits_update_status"
+DROP POLICY IF EXISTS "expense_splits_update" ON public.expense_splits;
+CREATE POLICY "expense_splits_update"
   ON public.expense_splits FOR UPDATE TO authenticated
   USING (
     profile_id = auth.uid() 
@@ -1193,6 +1361,17 @@ CREATE POLICY "expense_splits_update_status"
     )
   );
 
+DROP POLICY IF EXISTS "expense_splits_delete" ON public.expense_splits;
+CREATE POLICY "expense_splits_delete"
+  ON public.expense_splits FOR DELETE TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.expenses e 
+      WHERE e.id = expense_splits.expense_id 
+        AND (public.is_trip_admin(e.trip_id) OR (e.payer_id = auth.uid() AND public.is_trip_member(e.trip_id)))
+    )
+  );
+
 -- 7.11. ACTIVITY LOGS
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
 
@@ -1202,6 +1381,14 @@ DROP POLICY IF EXISTS "activity_logs_select" ON public.activity_logs;
 CREATE POLICY "activity_logs_select"
   ON public.activity_logs FOR SELECT TO authenticated
   USING (public.is_trip_member(trip_id) OR public.is_trip_admin(trip_id));
+
+DROP POLICY IF EXISTS "activity_logs_insert" ON public.activity_logs;
+CREATE POLICY "activity_logs_insert"
+  ON public.activity_logs FOR INSERT TO authenticated
+  WITH CHECK (
+    actor_id = auth.uid()
+    AND (public.is_trip_member(trip_id) OR public.is_trip_admin(trip_id))
+  );
 
 -- 7.12. LIMPEZA DE FUNÇÕES LEGADAS DO FLUXO DE PIN E ASSINATURAS OBSOLETAS
 DROP FUNCTION IF EXISTS public.accept_trip_invitation(UUID, BOOLEAN, VARCHAR);
